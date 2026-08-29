@@ -334,25 +334,26 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
     func relayout() {
         guard let panel, let pillView, let textView, let inputScrollView else { return }
 
-        // 展开态输入区通栏（R6：对齐 Gemini——左右各留 20 边距，不再沿用单行的缩进）
+        // 展开态输入区通栏（R6）：单行宽 412 / 通栏宽 600
         let expandedInputX: CGFloat = 20
         let expandedInputW = Metrics.panelWidth - 40
 
-        // 先按目标宽度定型，再量内容高（宽度切换瞬间 usedRect 才不会拿旧宽算错）
-        let willExpand = textView.contentSize().height > 18 || pillView.frame.height > Metrics.basePillHeight + 1
-        let targetW = willExpand ? expandedInputW : inputWidth()
-        if textView.frame.width != targetW { textView.frame.size.width = targetW }
+        // 迟滞判定（R7 修正 R6 的振荡）：以"当前态自己的宽度"测量——
+        // 单行态在 412 宽下超一行 → 展开；展开态在 600 宽下回落一行 → 收回。
+        // 412 比 600 更早换行，两个阈值天然错开，不会抖动。
+        let currentlyExpanded = pillView.frame.height > Metrics.basePillHeight + 1
+        let measureW = currentlyExpanded ? expandedInputW : inputWidth()
+        if textView.frame.width != measureW { textView.frame.size.width = measureW }
 
         // 内容高度：usedRect 为纯文本高（含多行行距）；+6 = 上下 inset(3×2)
         let usedH = textView.contentSize().height
         let lineH: CGFloat = 18                              // 14pt 系统字行高（测得）
         let textH = max(lineH, ceil(usedH)) + 6
-        let expanded = usedH > lineH                         // 第二行起算展开（审查 P2-4）
+        let expanded = usedH > lineH
 
         let topPad: CGFloat = 12
-        let controlRowCenterFromBottom: CGFloat = 22         // 展开态底排中心（R5 负坐标修复）
-        let controlRowTop: CGFloat = 44                      // 展开态输入区下界
-
+        let controlRowCenterFromBottom: CGFloat = 22
+        let controlRowTop: CGFloat = 44
         let pillHeight = expanded ? min(Metrics.maxPillHeight, topPad + textH + controlRowTop)
                                   : Metrics.basePillHeight
 
@@ -390,8 +391,8 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
         } else {
             let singleH = max(24, textH)                     // 行盒超 24（emoji 等）也能撑开
             inputScrollView.frame = NSRect(x: Metrics.inputX, y: controlY - singleH / 2,
-                                           width: inputWidth(), height: singleH)
-            textView.frame = NSRect(x: 0, y: 0, width: inputWidth(), height: singleH)
+                                           width: measureW, height: singleH)
+            textView.frame = NSRect(x: 0, y: 0, width: measureW, height: singleH)
         }
     }
 
