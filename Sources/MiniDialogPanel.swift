@@ -860,24 +860,3 @@ private final class PillTextView: NSTextView {
         super.insertNewline(sender)
     }
 }
-
-// MARK: - 展开逻辑测试钩子（仅 EXPAND_TEST 构建启用，生产构建完全剔除）
-#if EXPAND_TEST
-extension MiniDialogPanelController {
-    func typeForTest(_ s: String, count: Int) {
-        textView?.string = String(repeating: s, count: count)
-        textDidChange(Notification(name: NSText.didChangeNotification, object: textView as Any))
-    }
-
-    func geometryForTest() -> String {
-        guard let panel, let pillView, let inputScrollView else { return "panel 未构建" }
-        var lines: [String] = []
-        lines.append("panel.height=\(panel.frame.height)")
-        lines.append("pill: y=\(pillView.frame.minY) h=\(pillView.frame.height) corner=\(pillView.layer?.cornerRadius ?? -1)")
-        lines.append("input: x=\(inputScrollView.frame.minX) w=\(inputScrollView.frame.width) y=\(inputScrollView.frame.minY) h=\(inputScrollView.frame.height)")
-        if let plus = plusButton { lines.append("plus: y=\(plus.frame.minY)") }
-        if let send = sendButton { lines.append("send: y=\(send.frame.minY)") }
-        return lines.joined(separator: "\n")
-    }
-}
-#endif
