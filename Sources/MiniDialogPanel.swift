@@ -114,7 +114,7 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
     private enum Metrics {
         static let panelWidth: CGFloat = 640
         static let basePillHeight: CGFloat = 54       // 单行时胶囊高
-        static let maxPillHeight: CGFloat = 150       // 多行生长上限
+        // 多行生长上限改为按屏动态计算（R11：用户预期≈整个屏幕高），不再静态 150
         static let hintHeight: CGFloat = 20           // 胶囊下方提示行区
         static let plusX: CGFloat = 12
         static let inputX: CGFloat = 54
@@ -355,10 +355,14 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
         let controlRowCenterFromBottom: CGFloat = 22
         let controlRowTop: CGFloat = 44
         let textH = max(lineH, ceil(usedRender)) + 6
-        let pillHeight = expanded ? min(Metrics.maxPillHeight, topPad + textH + controlRowTop)
-                                  : Metrics.basePillHeight
 
+        // 动态生长上限（R11）：当前屏可视高度 − 底部唤起偏移(28) − 顶部呼吸(8) − 提示行。
+        // 用户预期≈整个屏幕高；到顶后输入区内部滚动（视口已具备该能力）
         let hintVisible = (hintLabel?.stringValue.isEmpty == false)
+        let screenH = (panel.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
+        let maxPillHeight = max(150, screenH - 28 - 8 - (hintVisible ? Metrics.hintHeight : 0))
+        let pillHeight = expanded ? min(maxPillHeight, topPad + textH + controlRowTop)
+                                  : Metrics.basePillHeight
         // 圆角对齐 Gemini：单行=全胶囊，展开=固定 24
         pillView.layer?.cornerRadius = expanded ? 24 : pillHeight / 2
 
