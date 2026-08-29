@@ -1,0 +1,6 @@
+# 构建产物与工具链缓存
+.build/
+release/
+# macOS 杂项
+.DS_Store
+**/.DS_Store

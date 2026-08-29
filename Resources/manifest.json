@@ -1,0 +1,7 @@
+{
+  "name": "DSH Launcher（菜单栏）",
+  "version": "1.0.0",
+  "summary": "独立的 macOS 菜单栏插件：鲸鱼图标常驻顶部菜单栏，一键唤起 DSH Desktop 主应用。安装在私有目录（启动台不显示图标），由 DSH Desktop 设置页控制启停，可随时热插拔（退出/删除后主应用恢复正常，零残留）。",
+  "bundleID": "com.deepseek-ai.dsh-launcher",
+  "executable": "DSHLauncher"
+}
