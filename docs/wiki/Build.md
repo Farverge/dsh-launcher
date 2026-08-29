@@ -41,18 +41,19 @@ mv ~/Library/Application\ Support/"DSH Launcher.app.bak-<时间戳>" \
 
 ## 4. 插件装配（dsh-mini-dialog）
 
-迷你对话框功能依赖随主应用分发的后端插件，源码在本仓库 `plugin/dsh-mini-dialog/`：
+**install.sh 已自动完成**（应用安装时随装部署）。手动兜底流程：
 
 1. 拷贝整包到 `~/.dsh/profiles/node_modules/dsh-mini-dialog/`
-2. 在 `~/.dsh/profiles/web/cordis.patch.yml` 的 insert 列表追加一行：
+2. 在 `~/.dsh/profiles/web/cordis.patch.yml` 的 insert 列表追加：
 
 ```yaml
-- insert:
     - id: mini-dialog
       name: 'dsh-mini-dialog'
 ```
 
 3. 重启 DSH 后端生效
+
+卸载侧的对称移除由 uninstall.sh 处理（含装配条目的两行剥离，已沙盒验证不误伤其他插件条目）。
 
 插件冒烟测试（不启动后端、不访问网络）：
 
@@ -63,5 +64,5 @@ cd plugin/dsh-mini-dialog && node test/smoke.mjs
 ## 5. 发版约定
 
 - 版本源：本仓库的 Release tag（`vX.Y.Z`），同时是主应用「检查 Launcher 更新」按钮的比对源
-- 资产：`DSH-Launcher-vX.Y.Z.zip`（`~/Library/Application Support` 内构建出的 `.app` 压缩）+ sha256
+- 资产：`DSH.Launcher.zip` **稳定名**（GitHub 把资产名空格归一为点号，`releases/latest/download/<名>` 跨版本可用），内含应用本体 + mini-dialog 插件载荷；附带 sha256
 - 主应用与 Launcher 版本节奏保持同步，套件内版本号一致

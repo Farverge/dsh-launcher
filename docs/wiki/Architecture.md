@@ -66,13 +66,24 @@
 - **思考强度覆盖**：官方 `AgentOptions` 无此字段，走 `agent/request` 瀑布改写 `LlmCallConfig.reasoningEffort`（仅对创建时显式选择的会话生效，其余原样放行）。
 - **功耗红线**：轮询自适应且不缓存状态；图标角标仅在过渡态运行节拍器；菜单行 hover 用事件驱动，无常驻监视线程。
 
-## 5. 目录结构
+## 5. 套件级嵌套部署（mini-dialog 的归属与生命周期）
+
+mini-dialog 是**套件级组件**：它的宿主脸服务跑在 DSH 后端、WebView 脸跑在主应用的 WebView 里，但它的唯一调用方是 Launcher 的迷你框。归属与分发据此设计：
+
+- **归属**：源码在本仓库 `plugin/dsh-mini-dialog/`，随 **Launcher** 分发（用户"随着 Launcher 下载、随着卸载移除"）
+- **安装**：Release 资产 `DSH.Launcher.zip` 内含应用本体 + 插件载荷，[install.sh](../../install.sh) 一次完成应用安装 + 插件拷入 profiles + cordis.patch.yml 幂等写入
+- **卸载**：[uninstall.sh](../../uninstall.sh) 对称移除应用本体、插件目录与装配条目（`--keep-plugin` 可保留）
+- **生效时机**：插件文件的部署/移除在 **DSH 后端重启后**生效（脚本会明确提示）；主应用设置里的启用/停用开关只控制 Launcher **进程**启停——关闭后插件仍在后端空转（回环路由无调用方，无害），不做硬联动是为了避免为空转状态重启后端、打断会话
+
+## 6. 目录结构
 
 ```
 Sources/            Swift 源码（main + 七个组件文件）
 Resources/          Info.plist、manifest.json、鲸鱼图标（SVG 矢量优先）
 plugin/dsh-mini-dialog/   后端插件包（lib/index.js 宿主脸、lib/client.js WebView 脸、test/smoke.mjs）
+install.sh          一键安装（应用 + 插件随装部署，三段式回馈）
+uninstall.sh        一键卸载（对称移除，--keep-plugin 可保留插件）
 docs/wiki/          本 wiki
 build.sh            一键构建（DSH_LAUNCHER_NO_INSTALL=1 仅构建；安装前自动备份旧版）
-release/            发版资产（gitignore：zip、sha256、发版说明）
+release/            发版资产（gitignore：DSH.Launcher.zip 稳定名、sha256、发版说明）
 ```

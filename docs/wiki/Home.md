@@ -4,6 +4,18 @@
 
 > **定位声明**：社区项目，**非 DeepSeek 官方出品**，与官方无隶属、合作或背书关系。Launcher 仅通过本机回环接口（`127.0.0.1:3080`）与 DSH 后端通信，不上传任何数据。完整免责声明见 [README](../../README.md#免责声明)。
 
+## 一键安装
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Farverge/DSH-Launcher/main/install.sh | bash
+```
+
+一行完成：菜单栏应用安装 + mini-dialog 后端插件随装部署。卸载对称：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Farverge/DSH-Launcher/main/uninstall.sh | bash
+```
+
 ## 它解决什么问题
 
 | 场景 | 只有 DSH Desktop | 加装 DSH Launcher |

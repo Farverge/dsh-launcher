@@ -26,7 +26,19 @@ DSH Launcher 是 [DSH Desktop](https://github.com/Farverge/DSH-MacOS) 的菜单�
 
 ## 获取安装
 
-到 [Releases](https://github.com/Farverge/DSH-Launcher/releases) 下载 `DSH-Launcher-vX.Y.Z.zip`，解压后把 `DSH Launcher.app` 拖入 `~/Library/Application Support/`，右键 → 打开（首次过 Gatekeeper）。
+一键命令（安装菜单栏应用，并随装部署 mini-dialog 后端插件）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Farverge/DSH-Launcher/main/install.sh | bash
+```
+
+一键卸载（对称移除应用与随装插件）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Farverge/DSH-Launcher/main/uninstall.sh | bash
+```
+
+手动方式：到 [Releases](https://github.com/Farverge/DSH-Launcher/releases) 下载 `DSH.Launcher.zip`，解压后把 `DSH Launcher.app` 拖入 `~/Library/Application Support/`。
 
 > 建议与 [DSH Desktop](https://github.com/Farverge/DSH-MacOS) v1.0.0+ 搭配使用；迷你对话框的完整体验依赖主应用 v1.0.x 携带的 dsh-mini-dialog 插件。
 

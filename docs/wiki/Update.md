@@ -13,6 +13,7 @@ Launcher、主应用、DSH 后端三者的更新关系与准确流程。
 | DSH Launcher | `Farverge/DSH-Launcher` 的 Release tag | 主应用设置 → 菜单栏插件 → 检查 Launcher 更新（只提示，按 Usage 手动覆盖安装） |
 | DSH Desktop 主应用 | `Farverge/DSH-MacOS` 的 Release tag | 主应用设置 → 检查应用更新 |
 | dsh 后端 | npm `@deepseek-ai/dsh` | 主应用设置 → 检查 DSH 更新（先查后问，自动清缓存并重启后端） |
+| mini-dialog 插件 | 随 Launcher 安装/卸载脚本分发（装 Launcher 即部署，卸载即移除） | 随 Launcher 更新窗口同步 |
 
 套件内三者版本节奏保持同步发布（同一发版窗口打各自 tag）。
 

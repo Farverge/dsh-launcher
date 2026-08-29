@@ -36,6 +36,12 @@
 - `dshdesktop://` URL scheme 声明（方案甲休眠，零运行成本）
 - 设置 → 菜单栏插件 → 检查 Launcher 更新（语义化版本比较，版本源 = 本仓库 Release）
 
+### 安装与卸载脚本（v1.0.0 同日工程补充）
+
+- `install.sh`：三段式一键安装（环境预检/下载安装/启动回馈，KEY=VALUE 摘要供 agent 解析），**随装部署 mini-dialog 插件**（profiles 拷入 + cordis.patch.yml 幂等写入）
+- `uninstall.sh`：对称一键卸载（退进程、移应用、移插件与装配条目，`--keep-plugin` 可保留）
+- Release 资产改稳定名 `DSH.Launcher.zip`，内含应用本体 + 插件载荷
+
 ### 质量与工程
 
 - 两轮独立代码审查 + 一轮布局专项实测审查；P0×2 / P1×8 / P2×24 全部修复

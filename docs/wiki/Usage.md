@@ -8,11 +8,17 @@
 
 ## 1. 安装
 
-到 [Releases](https://github.com/Farverge/DSH-Launcher/releases) 下载 `DSH-Launcher-vX.Y.Z.zip`，解压后把 `DSH Launcher.app` 拖入 `~/Library/Application Support/`。
+一键命令（推荐）——自动下载安装菜单栏应用，并随装部署 mini-dialog 后端插件：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Farverge/DSH-Launcher/main/install.sh | bash
+```
+
+手动方式：到 [Releases](https://github.com/Farverge/DSH-Launcher/releases) 下载 `DSH.Launcher.zip`，解压后把 `DSH Launcher.app` 拖入 `~/Library/Application Support/`；插件部署见 [Build](Build.md#4-插件装配dsh-mini-dialog)。
 
 > **为什么不是 /Applications**：私有目录不在启动台扫描范围（启动台只索引 /Applications）， Launcher 因此只作为菜单栏常驻工具存在，不打扰启动台；主应用经同一目录发现并管理它。
 
-首次打开：右键点击 → 「打开」（ad-hoc 签名过 Gatekeeper 的标准方式），菜单栏出现鲸鱼图标即成功。
+安装脚本带三段式回馈（环境预检 / 下载安装 / 启动状态），结尾输出 KEY=VALUE 摘要行供 agent 解析。插件部署在 DSH 后端重启后生效，脚本结束时会明确提示。
 
 前提：**macOS 13+**、Apple Silicon、已安装 [DSH Desktop](https://github.com/Farverge/DSH-MacOS)（建议 v1.0.0+，含 mini-dialog 插件时迷你框功能完整）。
 
@@ -57,5 +63,12 @@
 
 ## 7. 退出与卸载
 
-- 退出：右键菜单 → 退出 DSH Launcher
-- 卸载：退出后把 `~/Library/Application Support/DSH Launcher.app` 移入废纸篓。无 LaunchDaemons、无登录项、无任何系统残留
+一键卸载（退出应用 + 移除本体 + 随装移除 mini-dialog 插件及其装配条目）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Farverge/DSH-Launcher/main/uninstall.sh | bash
+```
+
+追加 `--keep-plugin`（`bash -s -- --keep-plugin`）可保留插件仅移除应用本体。插件移除在后端重启后生效；不触碰主应用与任何会话数据。
+
+手动方式：退出后把 `~/Library/Application Support/DSH Launcher.app` 移入废纸篓。无 LaunchDaemons、无登录项、无其他系统残留。
