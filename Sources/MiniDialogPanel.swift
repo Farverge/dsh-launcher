@@ -141,7 +141,6 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
     private weak var openMenu: NSMenu?
 
     // 选择状态
-    private var isExpanded = false      // 展开态单一事实源（R9：从 frame 反推会跨帧错位）
     private var projectPath: String?
     private var selectedModel: ModelOption?
     private var selectedReasoning: String?
@@ -194,7 +193,6 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
     }
 
     private func resetForNewDraft() {
-        isExpanded = false
         projectPath = nil
         selectedModel = nil
         selectedReasoning = nil
@@ -342,27 +340,21 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
         let wideW = Metrics.panelWidth - 40
         let lineH: CGFloat = 18                              // 14pt 系统字行高（测得）
 
-        // 同帧两段测量（R9 论证）：先按旧态宽度测，越阈值翻转后立即按新宽度重测，
-        // 测量与铺帧永不跨帧——上一帧的产物不再参与判定
-        var measureW = isExpanded ? wideW : singleW
-        if textView.frame.width != measureW { textView.frame.size.width = measureW }
-        var usedH = textView.contentSize().height
-        if !isExpanded && usedH > lineH {
-            isExpanded = true
-            textView.frame.size.width = wideW
-            usedH = textView.contentSize().height
-        } else if isExpanded && usedH <= lineH {
-            isExpanded = false
-            textView.frame.size.width = singleW
-            usedH = textView.contentSize().height
-        }
-        _ = measureW; measureW = isExpanded ? wideW : singleW
-        let textH = max(lineH, ceil(usedH)) + 6
-        let expanded = isExpanded
+        // 阈值单锚定（R10）：展开与否只取决于"内容在单行宽度下是否超过一行"。
+        // 收回判据若锚在通栏宽，会出现中间带（49~69 字符）"收回后窄宽又装不下"的抖动。
+        if textView.frame.width != singleW { textView.frame.size.width = singleW }
+        let usedSingle = textView.contentSize().height
+        let expanded = usedSingle > lineH
+
+        // 渲染宽度按状态；展开态需在通栏宽下重测内容高
+        let renderW = expanded ? wideW : singleW
+        if textView.frame.width != renderW { textView.frame.size.width = renderW }
+        let usedRender = expanded ? textView.contentSize().height : usedSingle
 
         let topPad: CGFloat = 12
         let controlRowCenterFromBottom: CGFloat = 22
         let controlRowTop: CGFloat = 44
+        let textH = max(lineH, ceil(usedRender)) + 6
         let pillHeight = expanded ? min(Metrics.maxPillHeight, topPad + textH + controlRowTop)
                                   : Metrics.basePillHeight
 
@@ -394,14 +386,14 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
         if expanded {
             let viewportH = pillHeight - topPad - controlRowTop
             inputScrollView.frame = NSRect(x: wideX, y: controlRowTop,
-                                           width: measureW, height: max(24, viewportH))
-            textView.frame = NSRect(x: 0, y: 0, width: measureW,
+                                           width: renderW, height: max(24, viewportH))
+            textView.frame = NSRect(x: 0, y: 0, width: renderW,
                                     height: max(textH, max(24, viewportH)))
         } else {
             let singleH = max(24, textH)                     // 行盒超 24（emoji 等）也能撑开
             inputScrollView.frame = NSRect(x: Metrics.inputX, y: controlY - singleH / 2,
-                                           width: measureW, height: singleH)
-            textView.frame = NSRect(x: 0, y: 0, width: measureW, height: singleH)
+                                           width: renderW, height: singleH)
+            textView.frame = NSRect(x: 0, y: 0, width: renderW, height: singleH)
         }
     }
 
