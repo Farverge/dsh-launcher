@@ -135,8 +135,9 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
     private var sending = false
     /// 收起动画中抑制 resignKey 二次触发
     private var dismissing = false
-    /// 菜单/工作区选择器跟踪期间抑制"失 key 即收"（R3：否则菜单一开面板先没了）
-    private var menuInteraction = false
+    /// 菜单/工作区选择器跟踪期间抑制"失 key 即收"。计数器式（R7）：菜单跟踪与
+    /// 访达面板会嵌套，布尔置位会被外层提前清零造成踩踏
+    private var menuInteraction = 0
     private weak var openMenu: NSMenu?
 
     // 选择状态
@@ -533,14 +534,14 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
     /// 弹菜单的统一入口：跟踪期间抑制失 key 收起（popUp 阻塞返回后恢复）
     private func presentMenu(_ menu: NSMenu, anchoredTo sender: NSButton) {
         openMenu = menu
-        menuInteraction = true
+        menuInteraction += 1
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.frame.height + 6), in: sender)
-        menuInteraction = false
+        menuInteraction -= 1
         openMenu = nil
         // 行点击后 key 的恢复是异步的（R6：同步检查会误杀"添加工作区"流程）——
         // 延迟一拍再判：应用还活跃就恢复焦点；只有真点到别的应用才收起
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.panel?.isVisible == true, self.menuInteraction == false else { return }
+            guard let self, self.panel?.isVisible == true, self.menuInteraction == 0 else { return }
             if !NSApp.isActive {
                 self.dismiss()
             } else if self.panel?.isKeyWindow == false {
@@ -558,8 +559,9 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
     @objc private func pickProjectFolder() {
         closeMenu()
         // R5：beginSheetModal 挂 borderless 非激活面板会被系统静默拒绝 → 改独立窗口式
-        // begin{}，并显式激活本 app（accessory 应用不激活则面板无响应）
-        menuInteraction = true
+        // begin{}，并显式激活本 app（accessory 应用不激活则面板无响应）。
+        // R7：+1 计数防 presentMenu 返回路径提前清守卫
+        menuInteraction += 1
         let picker = NSOpenPanel()
         picker.canChooseDirectories = true
         picker.canChooseFiles = false
@@ -569,7 +571,7 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
         picker.begin { [weak self] response in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.menuInteraction = false
+                self.menuInteraction -= 1
                 if response == .OK, let url = picker.urls.first {
                     self.projectPath = url.path
                 }
@@ -756,7 +758,7 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
         // Esc 兜底（resignKey 不覆盖按键场景）
         let key = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, self.panel?.isVisible == true, event.keyCode == 53,
-                  self.menuInteraction == false, NSApp.modalWindow == nil else { return event }
+                  self.menuInteraction == 0, NSApp.modalWindow == nil else { return event }
             self.dismiss()
             return nil
         }
@@ -764,7 +766,7 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
     }
 
     @objc private func panelDidResignKey(_ note: Notification) {
-        guard dismissing == false, menuInteraction == false, panel?.isVisible == true else { return }
+        guard dismissing == false, menuInteraction == 0, panel?.isVisible == true else { return }
         dismiss()
     }
 
@@ -838,6 +840,9 @@ private final class PillTextView: NSTextView {
         guard let layoutManager, let textContainer else {
             return CGRect(x: 0, y: 0, width: frame.width, height: 22)
         }
+        // NSLayoutManager 惰性布局：不 ensureLayout 时 usedRect 是旧值
+        // （R7：打满一行要再打 20+ 字符才碰巧触发展开的根因）
+        layoutManager.ensureLayout(for: textContainer)
         return layoutManager.usedRect(for: textContainer)
     }
 
