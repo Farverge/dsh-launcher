@@ -333,6 +333,15 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
     func relayout() {
         guard let panel, let pillView, let textView, let inputScrollView else { return }
 
+        // 展开态输入区通栏（R6：对齐 Gemini——左右各留 20 边距，不再沿用单行的缩进）
+        let expandedInputX: CGFloat = 20
+        let expandedInputW = Metrics.panelWidth - 40
+
+        // 先按目标宽度定型，再量内容高（宽度切换瞬间 usedRect 才不会拿旧宽算错）
+        let willExpand = textView.contentSize().height > 18 || pillView.frame.height > Metrics.basePillHeight + 1
+        let targetW = willExpand ? expandedInputW : inputWidth()
+        if textView.frame.width != targetW { textView.frame.size.width = targetW }
+
         // 内容高度：usedRect 为纯文本高（含多行行距）；+6 = 上下 inset(3×2)
         let usedH = textView.contentSize().height
         let lineH: CGFloat = 18                              // 14pt 系统字行高（测得）
@@ -370,12 +379,12 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
         modelChip?.frame = NSRect(x: Metrics.panelWidth - 14 - Metrics.sendSize - 10 - modelW,
                                   y: controlY - 12, width: modelW, height: 24)
 
-        // 输入视口：单行=行高带（居中）；展开=[控件行上方44, 顶部12] 区间
+        // 输入视口：单行=行高带（居中）；展开=通栏 [控件行上方44, 顶部12] 区间
         if expanded {
             let viewportH = pillHeight - topPad - controlRowTop
-            inputScrollView.frame = NSRect(x: Metrics.inputX, y: controlRowTop,
-                                           width: inputWidth(), height: max(24, viewportH))
-            textView.frame = NSRect(x: 0, y: 0, width: inputWidth(),
+            inputScrollView.frame = NSRect(x: expandedInputX, y: controlRowTop,
+                                           width: expandedInputW, height: max(24, viewportH))
+            textView.frame = NSRect(x: 0, y: 0, width: expandedInputW,
                                     height: max(textH, max(24, viewportH)))
         } else {
             let singleH = max(24, textH)                     // 行盒超 24（emoji 等）也能撑开
@@ -528,8 +537,17 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.frame.height + 6), in: sender)
         menuInteraction = false
         openMenu = nil
-        // 菜单期间用户点了别的应用：key 不会回来，面板不该失 key 悬挂
-        if panel?.isVisible == true, panel?.isKeyWindow == false { dismiss() }
+        // 行点击后 key 的恢复是异步的（R6：同步检查会误杀"添加工作区"流程）——
+        // 延迟一拍再判：应用还活跃就恢复焦点；只有真点到别的应用才收起
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.panel?.isVisible == true, self.menuInteraction == false else { return }
+            if !NSApp.isActive {
+                self.dismiss()
+            } else if self.panel?.isKeyWindow == false {
+                self.panel?.makeKeyAndOrderFront(nil)
+                self.panel?.makeFirstResponder(self.textView)
+            }
+        }
     }
 
     @objc private func useNoProject() {
