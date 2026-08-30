@@ -87,6 +87,65 @@ enum BackendSpawner {
     }
 }
 
+/// 悬浮反馈按钮（对齐 Gemini R12）：+ 与模型 chip 悬停出现浅灰底（圆/胶囊），
+/// 发送钮悬停变浅。深浅色自适应。非 hover 态完全透明底（素文本/素图形）。
+@MainActor
+final class HoverEffectButton: NSButton {
+    enum Style { case circle, capsule, tintedCircle }
+    var style: Style = .circle { didSet { applyBaseLook() } }
+    private var tracking: NSTrackingArea?
+    var baseFill: NSColor?
+    private var hovering = false
+
+    init(style: Style) {
+        super.init(frame: .zero)
+        self.style = style
+        wantsLayer = true
+        isBordered = false
+        applyBaseLook()
+    }
+    required init?(coder: NSCoder) { fatalError("unsupported") }
+
+    private var hoverFill: NSColor {
+        NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor.white.withAlphaComponent(0.10)
+                : NSColor.black.withAlphaComponent(0.06)
+        }
+    }
+    private func resolved(_ color: NSColor?) -> CGColor? {
+        guard let color else { return nil }
+        NSAppearance.current = effectiveAppearance
+        defer { NSAppearance.current = nil }
+        return color.cgColor
+    }
+    private func applyBaseLook() {
+        layer?.cornerRadius = bounds.height / 2
+        layer?.backgroundColor = resolved(hovering ? hoverFill : baseFill)
+    }
+    override func layout() {
+        super.layout()
+        applyBaseLook()
+    }
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        addTrackingArea(area)
+        tracking = area
+    }
+    override func mouseEntered(with event: NSEvent) {
+        guard isEnabled else { return }
+        hovering = true
+        layer?.backgroundColor = resolved(hoverFill)
+    }
+    override func mouseExited(with event: NSEvent) {
+        hovering = false
+        layer?.backgroundColor = resolved(baseFill)
+    }
+}
+
 // MARK: - 迷你对话框（Gemini 式单行胶囊，2026-08-29 R2 重设计）
 
 /// borderless 面板默认不可成为 key window——不重写 canBecomeKey 文字框拿不到焦点。
@@ -132,6 +191,17 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
     private var hintLabel: NSTextField?
     private var monitors: [Any] = []
     private var resignKeyObserver: NSObjectProtocol?
+    private var appearanceKVO: NSKeyValueObservation?
+    private let pillFill = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(calibratedRed: 0.10, green: 0.10, blue: 0.115, alpha: 0.97)
+            : NSColor.white.withAlphaComponent(0.97)
+    }
+    private let pillBorder = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor.white.withAlphaComponent(0.10)
+            : NSColor.black.withAlphaComponent(0.08)
+    }
     private var sending = false
     /// 收起动画中抑制 resignKey 二次触发
     private var dismissing = false
@@ -166,6 +236,12 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
         if panel == nil { buildPanel() }
         dismissing = false
         resetForNewDraft()
+        refreshAppearance()
+        if appearanceKVO == nil {
+            appearanceKVO = NSApp.observe(\.effectiveAppearance, options: [.initial]) { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.refreshAppearance() }
+            }
+        }
         positionAtBottomCenter()
         panel?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -179,6 +255,16 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
         dismissing = true
         panel?.orderOut(nil)
         removeMonitorsIfNeeded()
+        appearanceKVO = nil
+    }
+
+    private func refreshAppearance() {
+        guard let panel else { return }
+        panel.appearance = NSApp.effectiveAppearance
+        NSAppearance.current = panel.effectiveAppearance
+        pillView.layer?.backgroundColor = pillFill.cgColor
+        pillView.layer?.borderColor = pillBorder.cgColor
+        NSAppearance.current = nil
     }
 
     private func positionAtBottomCenter() {
@@ -230,25 +316,15 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
                                         width: Metrics.panelWidth, height: Metrics.basePillHeight))
         pill.wantsLayer = true
         // 深浅色自适应（R4）：暗色=深灰卡；浅色=白卡。面板存续期短，不做换肤监听
-        pill.layer?.backgroundColor = NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                ? NSColor(calibratedRed: 0.10, green: 0.10, blue: 0.115, alpha: 0.97)
-                : NSColor.white.withAlphaComponent(0.97)
-        }.cgColor
         pill.layer?.cornerCurve = .continuous
         pill.layer?.borderWidth = 1
-        pill.layer?.borderColor = NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                ? NSColor.white.withAlphaComponent(0.10)
-                : NSColor.black.withAlphaComponent(0.08)
-        }.cgColor
         pill.layer?.masksToBounds = true         // 裁掉超高文本；圆角干净
         content.addSubview(pill)
         pillView = pill
 
         // "+"：工作区菜单（选择工作区 / 添加工作区…访达）
-        let plus = NSButton(frame: NSRect(x: Metrics.plusX, y: 0, width: 30, height: 30))
-        plus.isBordered = false
+        let plus = HoverEffectButton(style: .circle)
+        plus.frame = NSRect(x: Metrics.plusX, y: 0, width: 30, height: 30)
         plus.title = "+"
         plus.contentTintColor = .secondaryLabelColor
         plus.font = NSFont.systemFont(ofSize: 17, weight: .regular)
@@ -260,10 +336,13 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
         // 输入区（自适应换行；回车发送 ⇧回车换行）。必须嵌 NSScrollView：
         // 裸 NSTextView 的插入点超出可视区不会自动滚动（R5"按↓光标消失"根因）
         let input = PillTextView(frame: NSRect(x: 0, y: 0, width: inputWidth(), height: 24))
-        input.font = NSFont.systemFont(ofSize: 14)   // 审查 P1-3：默认打字字体实为 Helvetica 12
+        let inputFont = NSFont.systemFont(ofSize: 15)    // 真机 R12：14 观感偏小
+        input.font = inputFont
         input.placeholder = "尽管问，开始工作…"
         input.drawsBackground = false            // 真机 R2：深色矩形根因
-        input.textContainerInset = NSSize(width: 1, height: 3)   // 14pt 字行高≈18，上下各 3 → 光标垂直对称
+        // 行高实测推导，内边距 = (视口24 − 行高)/2 → 光标严格垂直居中（弃硬编码）
+        let lineH15 = ceil(inputFont.boundingRectForFont.height)
+        input.textContainerInset = NSSize(width: 1, height: max(0, (24 - lineH15) / 2))
         input.textContainer?.lineFragmentPadding = 1
         input.minSize = NSSize(width: 0, height: 24)
         input.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
@@ -283,8 +362,7 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
         textView = input
 
         // 模型 chip（富选择菜单）
-        let model = NSButton(title: defaultModelLabel, target: nil, action: nil)
-        model.isBordered = false
+        let model = HoverEffectButton(style: .capsule)
         model.controlSize = .small
         model.font = NSFont.systemFont(ofSize: 12)
         model.contentTintColor = .secondaryLabelColor
@@ -295,16 +373,13 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
         modelChip = model
 
         // 发送（蓝色圆钮，随输入启用）
-        let send = NSButton(frame: NSRect(x: 0, y: 0, width: Metrics.sendSize, height: Metrics.sendSize))
-        send.isBordered = false
+        let send = HoverEffectButton(style: .tintedCircle)
         send.image = NSImage(systemSymbolName: "arrow.up",
                              accessibilityDescription: "发送")?
             .withSymbolConfiguration(.init(pointSize: 14, weight: .semibold))
         send.imageScaling = .scaleProportionallyDown
         send.contentTintColor = .white
-        send.wantsLayer = true
-        send.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
-        send.layer?.cornerRadius = Metrics.sendSize / 2
+        send.baseFill = .controlAccentColor
         send.target = self
         send.action = #selector(sendTapped)
         send.isEnabled = false
@@ -338,7 +413,7 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
         let singleW = inputWidth()
         let wideX: CGFloat = 20
         let wideW = Metrics.panelWidth - 40
-        let lineH: CGFloat = 18                              // 14pt 系统字行高（测得）
+        let lineH: CGFloat = ceil((textView.font ?? NSFont.systemFont(ofSize: 15)).boundingRectForFont.height)
 
         // 阈值单锚定（R10）：展开与否只取决于"内容在单行宽度下是否超过一行"。
         // 收回判据若锚在通栏宽，会出现中间带（49~69 字符）"收回后窄宽又装不下"的抖动。
