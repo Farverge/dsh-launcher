@@ -138,7 +138,13 @@ final class HoverEffectButton: NSButton {
     override func mouseEntered(with event: NSEvent) {
         guard isEnabled else { return }
         hovering = true
-        layer?.backgroundColor = resolved(hoverFill)
+        switch style {
+        case .tintedCircle:
+            // 蓝底悬停 = 同色变浅（55% 透明度），绝不能被灰白填充洗掉
+            layer?.backgroundColor = resolved(baseFill.map { $0.withAlphaComponent(0.55) })
+        default:
+            layer?.backgroundColor = resolved(hoverFill)
+        }
     }
     override func mouseExited(with event: NSEvent) {
         hovering = false
@@ -341,9 +347,9 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
         input.font = inputFont
         input.placeholder = "尽管问，开始工作…"
         input.drawsBackground = false            // 真机 R2：深色矩形根因
-        // 行高实测推导，内边距 = (视口24 − 行高)/2 → 光标严格垂直居中（弃硬编码）
-        let lineH15 = ceil(inputFont.boundingRectForFont.height)
-        input.textContainerInset = NSSize(width: 1, height: max(0, (24 - lineH15) / 2))
+        // 内边距固定 3pt：与 relayout 的"行高+6"单行视口精确配平
+        // （此前按 24 基准算出 2.5，与实际视口 25 差 1pt → 文字+光标整体偏高）
+        input.textContainerInset = NSSize(width: 1, height: 3)
         input.textContainer?.lineFragmentPadding = 1
         input.minSize = NSSize(width: 0, height: 24)
         input.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
@@ -472,7 +478,8 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
                                     height: max(textH, max(24, viewportH)))
         } else {
             let singleH = max(24, textH)                     // 行盒超 24（emoji 等）也能撑开
-            inputScrollView.frame = NSRect(x: Metrics.inputX, y: controlY - singleH / 2,
+            // 光学下沉 1pt：CJK 墨迹重心相对行盒偏上，纯几何居中会读成偏高
+            inputScrollView.frame = NSRect(x: Metrics.inputX, y: controlY - singleH / 2 - 1,
                                            width: renderW, height: singleH)
             textView.frame = NSRect(x: 0, y: 0, width: renderW, height: singleH)
         }
