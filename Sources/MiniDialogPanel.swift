@@ -175,8 +175,9 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
         static let basePillHeight: CGFloat = 54       // 单行时胶囊高
         // 多行生长上限改为按屏动态计算（R11：用户预期≈整个屏幕高），不再静态 150
         static let hintHeight: CGFloat = 20           // 胶囊下方提示行区
-        static let plusX: CGFloat = 12
-        static let inputX: CGFloat = 54
+        static let plusX: CGFloat = 14
+        static let inputX: CGFloat = 52
+        static let controlCircleSize: CGFloat = 32   // + 与发送同尺寸（镜像对称）
         static let sendSize: CGFloat = 32
         static let modelChipWidth: CGFloat = 104
     }
@@ -324,10 +325,10 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
 
         // "+"：工作区菜单（选择工作区 / 添加工作区…访达）
         let plus = HoverEffectButton(style: .circle)
-        plus.frame = NSRect(x: Metrics.plusX, y: 0, width: 30, height: 30)
+        plus.frame = NSRect(x: Metrics.plusX, y: 0, width: Metrics.controlCircleSize, height: Metrics.controlCircleSize)
         plus.title = "+"
         plus.contentTintColor = .secondaryLabelColor
-        plus.font = NSFont.systemFont(ofSize: 17, weight: .regular)
+        plus.font = NSFont.systemFont(ofSize: 16, weight: .regular)
         plus.target = self
         plus.action = #selector(plusTapped(_:))
         pill.addSubview(plus)
@@ -376,7 +377,7 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
         let send = HoverEffectButton(style: .tintedCircle)
         send.image = NSImage(systemSymbolName: "arrow.up",
                              accessibilityDescription: "发送")?
-            .withSymbolConfiguration(.init(pointSize: 14, weight: .semibold))
+            .withSymbolConfiguration(.init(pointSize: 15, weight: .semibold))
         send.imageScaling = .scaleProportionallyDown
         send.contentTintColor = .white
         send.baseFill = .controlAccentColor
@@ -453,7 +454,8 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
 
         // 控件行：单行=胶囊垂直中心；展开=距底 22
         let controlY = expanded ? controlRowCenterFromBottom : pillHeight / 2
-        plusButton?.frame = NSRect(x: Metrics.plusX, y: controlY - 15, width: 30, height: 30)
+        plusButton?.frame = NSRect(x: Metrics.plusX, y: controlY - Metrics.controlCircleSize / 2,
+                                   width: Metrics.controlCircleSize, height: Metrics.controlCircleSize)
         sendButton?.frame = NSRect(x: Metrics.panelWidth - 14 - Metrics.sendSize,
                                    y: controlY - Metrics.sendSize / 2,
                                    width: Metrics.sendSize, height: Metrics.sendSize)
