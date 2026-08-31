@@ -34,3 +34,9 @@ Launcher、主应用、DSH 后端三者的更新关系与准确流程。
 - Launcher 向后兼容同代主应用；三态判定、窗口状态广播等跨应用信号以分布式通知为契约，双方独立升级不破坏
 - mini-dialog 插件随 Launcher 分发：安装脚本与主应用 v1.0.3+ 的自动更新都会同步部署插件（自动更新时旧插件先备份、失败恢复原状）
 - 插件上游 API 锁定 `@deepseek-ai/dsh@0.1.1-rc.2`；官方升级后按 [Architecture](Architecture.md) 核对所用接口再跟进
+
+## 4. 0.1.2-alpha 通道的插件适配（2026-09-01）
+
+- **mini-dialog**：client 声明已适配 0.1.2-alpha（`dsh.client.inject` 改官方 `ui-workspace` 同款 9 包列表——原 `@deepseek-ai/dsh-client-runtime` 已消失，悬空边会把浏览器启动图炸成白屏）；host API（/api/mini/*）不受影响，沙箱 alpha.3 实测启动图零悬空边、GUI 完整渲染。**注意**：插件 bundle 只能经页面启动图（`__DSH_BOOT__`）的合并 URL 加载，纯路径 `/plugins/dsh-mini-dialog/client.js` 返回 404 属官方行为
+- **汉化（dsh-l10n-zh，随主应用生态）**：0.1.2-alpha 上原样可用，无需适配
+- 壳侧（DSH Desktop v1.0.6+）已全自动适配 alpha 认证链，详见 [DSH-MacOS wiki · 更新](https://github.com/Farverge/DSH-MacOS/wiki)
