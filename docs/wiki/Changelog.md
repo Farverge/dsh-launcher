@@ -1,5 +1,9 @@
 # 版本历史
 
+## 2026-08-31 · 更新机制升级说明（Launcher 代码无变更，版本维持 v1.0.0）
+
+DSH Desktop v1.0.3 起，「检查 Launcher 更新」从提示+手动下载升级为全自动安装（下载校验 → mini-dialog 插件同步 → 换壳重启），本仓库的 Release zip 结构（`DSH Launcher.app` + `dsh-mini-dialog` 平级）即为自动更新的载荷格式。详见 [Update](Update.md)。
+
 ## v1.0.0（2026-08-29）
 
 首个公开发布版本，与 DSH Desktop v1.0.0 套件同步。
