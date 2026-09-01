@@ -37,6 +37,6 @@ Launcher、主应用、DSH 后端三者的更新关系与准确流程。
 
 ## 4. 0.1.2-alpha 通道的插件适配（2026-09-01）
 
-- **mini-dialog**：client 声明已适配 0.1.2-alpha（`dsh.client.inject` 改官方 `ui-workspace` 同款 9 包列表——原 `@deepseek-ai/dsh-client-runtime` 已消失，悬空边会把浏览器启动图炸成白屏）；host API（/api/mini/*）不受影响，沙箱 alpha.3 实测启动图零悬空边、GUI 完整渲染。**注意**：插件 bundle 只能经页面启动图（`__DSH_BOOT__`）的合并 URL 加载，纯路径 `/plugins/dsh-mini-dialog/client.js` 返回 404 属官方行为
+- **mini-dialog（v0.2.0 起）**：client 脸已退役——会话跳转的浏览器端执行整体移交 `dsh-plugins-norm`（家族漂移屏蔽层），`/api/mini/focus` 改经 norm 稳定面广播（norm 缺席时返回 503 指引）。**部署前置：dsh-plugins-norm ≥ 1.0.1**（装卸须与 cordis.patch.yml 条目同步，否则整个 profile 拒绝启动）。host API（/api/mini/*）不受影响。**注意**：插件 bundle 只能经页面启动图（`__DSH_BOOT__`）的合并 URL 加载，纯路径 `/plugins/<id>/client.js` 返回 404 属官方行为
 - **汉化（dsh-l10n-zh，随主应用生态）**：0.1.2-alpha 上原样可用，无需适配
 - 壳侧（DSH Desktop v1.0.6+）已全自动适配 alpha 认证链，详见 [DSH-MacOS wiki · 更新](https://github.com/Farverge/DSH-MacOS/wiki)
