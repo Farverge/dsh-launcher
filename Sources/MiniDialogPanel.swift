@@ -123,6 +123,13 @@ final class HoverEffectButton: NSButton {
         layer?.cornerRadius = bounds.height / 2
         layer?.backgroundColor = resolved(hovering ? hoverFill : baseFill)
     }
+    /// 换肤时重刷图层：resolved() 是"调用时按当时外观解析成静态 CGColor"，layer 不会
+    /// 自动换肤；面板外观改为跟随系统（panel.appearance = nil）后，本钩子在系统切
+    /// 深/浅色时必然回调，保证 hover/base 填充不残留旧主题。
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyBaseLook()
+    }
     override func layout() {
         super.layout()
         applyBaseLook()
@@ -198,7 +205,13 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
     private var hintLabel: NSTextField?
     private var monitors: [Any] = []
     private var resignKeyObserver: NSObjectProtocol?
-    private var appearanceKVO: NSKeyValueObservation?
+    /// 系统级换肤观察者（AppleInterfaceThemeChangedNotification）。
+    /// 为何不用 NSApp.effectiveAppearance KVO：本应用是 accessory（LSUIElement）应用，
+    /// 后台未激活时系统换肤经常不触发 NSApp 的 KVO，通知缺失 → 迷你框钉在旧主题。
+    /// 分布式通知对后台应用必然派发；事件驱动、零轮询。
+    /// 生命周期：面板创建时注册一次、终身持有（与 present/dismiss 解耦，不再装卸），
+    /// deinit 移除。block 观察者不被中心持有，必须强引用保存。
+    private var themeChangeObserver: NSObjectProtocol?
     private let pillFill = NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             ? NSColor(calibratedRed: 0.10, green: 0.10, blue: 0.115, alpha: 0.97)
@@ -244,11 +257,6 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
         dismissing = false
         resetForNewDraft()
         refreshAppearance()
-        if appearanceKVO == nil {
-            appearanceKVO = NSApp.observe(\.effectiveAppearance, options: [.initial]) { [weak self] _, _ in
-                MainActor.assumeIsolated { self?.refreshAppearance() }
-            }
-        }
         positionAtBottomCenter()
         panel?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -262,13 +270,25 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
         dismissing = true
         panel?.orderOut(nil)
         removeMonitorsIfNeeded()
-        appearanceKVO = nil
     }
 
+    /// 深浅色根治（真机反馈：面板固定深色不随系统切换）三要点：
+    /// 1. panel.appearance 必须为 nil——显式 appearance 会把窗口钉死在设置瞬间的快照，
+    ///    覆盖系统跟随；nil 才让窗口自动跟随系统。
+    /// 2. 触发源用系统级分布式通知（themeChangeObserver，见属性注释），后台也必达。
+    /// 3. 图层背景色/描边是手动解析的静态 CGColor（动态 NSColor 的 .cgColor 按
+    ///    NSAppearance.current 当场解析），layer 不会自动换肤，必须在这里以
+    ///    panel.effectiveAppearance 为 current 重设一次；用后置 nil 的既有模式。
     private func refreshAppearance() {
         guard let panel else { return }
-        panel.appearance = NSApp.effectiveAppearance
-        NSAppearance.current = panel.effectiveAppearance
+        // 【v2 根治】不跟随 NSApp.effectiveAppearance——accessory（菜单栏）应用
+        // 后台时该值会过期（真机实测：系统已切浅色、其他窗口全变浅，它仍是
+        // dark，窗口跟随它就永远深色）。真相在系统偏好里：直接读
+        // AppleInterfaceStyle，把窗口显式钉到系统真实外观；换肤分布式通知
+        // 触发时重读本值即完成实时切换。
+        let systemWantsDark = UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark"
+        panel.appearance = NSAppearance(named: systemWantsDark ? .darkAqua : .aqua)
+        NSAppearance.current = panel.appearance
         pillView.layer?.backgroundColor = pillFill.cgColor
         pillView.layer?.borderColor = pillBorder.cgColor
         NSAppearance.current = nil
@@ -322,7 +342,8 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
         let pill = NSView(frame: NSRect(x: 0, y: Metrics.hintHeight,
                                         width: Metrics.panelWidth, height: Metrics.basePillHeight))
         pill.wantsLayer = true
-        // 深浅色自适应（R4）：暗色=深灰卡；浅色=白卡。面板存续期短，不做换肤监听
+        // 深浅色自适应（R4）：暗色=深灰卡；浅色=白卡。layer 颜色由 refreshAppearance()
+        // 手动刷新，触发源=系统级分布式通知（themeChangeObserver）
         pill.layer?.cornerCurve = .continuous
         pill.layer?.borderWidth = 1
         pill.layer?.masksToBounds = true         // 裁掉超高文本；圆角干净
@@ -405,6 +426,30 @@ final class MiniDialogPanelController: NSObject, NSTextViewDelegate {
         panel.contentView = content
         self.panel = panel
         relayout()
+        installThemeChangeObserverIfNeeded()
+    }
+
+    /// 系统换肤通知（ AppleInterfaceThemeChangedNotification ）：面板创建时注册一次、
+    /// 终身持有（deinit 移除），与 present/dismiss 完全解耦——原 KVO 方案在
+    /// accessory 应用后台未激活时经常收不到，分布式通知对后台应用必然派发。
+    private func installThemeChangeObserverIfNeeded() {
+        guard themeChangeObserver == nil else { return }
+        themeChangeObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("AppleInterfaceThemeChangedNotification"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            // 额外一拍异步：等窗口服务端把新外观落到本窗口后再解析，避免读到旧值
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.refreshAppearance() }
+            }
+        }
+    }
+
+    deinit {
+        if let themeChangeObserver {
+            DistributedNotificationCenter.default().removeObserver(themeChangeObserver)
+        }
     }
 
     private func inputWidth() -> CGFloat {
