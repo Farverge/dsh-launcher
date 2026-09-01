@@ -55,7 +55,9 @@ final class CheckupWindowController {
         win.title = "DSH Launcher · 一键体检"
         win.backgroundColor = bgColor
         win.isMovableByWindowBackground = true
-        win.level = .floating
+        // 不再悬浮置顶（与确认窗同款取舍）：早期设计是"浮在主应用之上对照读数"，
+        // 但动作按钮会把工作交接给 Finder/终端，置顶恰好挡住交接目标。
+        // makeKeyAndOrderFront 仍保证打开时到最前，此后遵循常规窗口层级。
         win.isReleasedWhenClosed = false
         win.minSize = NSSize(width: 620, height: 320)
 
