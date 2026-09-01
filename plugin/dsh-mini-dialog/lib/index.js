@@ -4,30 +4,32 @@
  * 为桌面 Launcher 内嵌的 WebView 提供一组轻量会话 HTTP 路由：
  *   POST /api/mini/session.new    新建会话（可选 cwd / provider / model），并立即送入首条消息
  *   POST /api/mini/session.send   向既有会话追加一条用户消息
- *   POST /api/mini/focus          向所有已连 WebView 广播 focus-session（Launcher 打开主应用后调用）
+ *   POST /api/mini/focus          会话跳转——v0.2.0 起改经 dsh-plugins-norm 稳定面广播
  *   GET  /api/mini/options        尽力而为返回可选 provider / 默认模型
- *   GET  /api/mini/ws (upgrade)   宿主→WebView 的 WebSocket 推送通道（registerUpgrade）
+ *   GET  /api/mini/reasoning      思考强度档位查询
  *
- * 一包两脸：宿主侧（本文件）挂 Cordis 服务；WebView 侧见 lib/client.js。
+ * 【v0.2.0 重大变更：client 脸退役】本插件不再有自己的浏览器模块（旧
+ * client 脚本、自有 WS 升级通道、dsh.client 声明全部移除）。原因与去向：
+ * 会话跳转的浏览器端执行（ctx.sessions.open）整体移交 dsh-plugins-norm
+ * （家族漂移屏蔽层，唯一允许接触官方 client 服务的插件）。本插件的 focus
+ * 路由改为惰性解析 norm 服务并调用其 focus()——norm 缺席时返回 503 与
+ * 明确指引（回滚方案：恢复 v0.1.0 的自带 client 脸）。这一刀切掉了：
+ * 硬编码 3080 端口的 WS 地址、自维护 RFC6455 帧、启动图暴露面，以及
+ * "9 包 inject 随官方核心包漂移"的全部维护面。
  *
  * 【部署方式】整个包拷入 ~/.dsh/profiles/node_modules/dsh-mini-dialog/，
  * 然后在 cordis.patch.yml 的 insert 列表补一行 `name: dsh-mini-dialog`，重启生效。
- * （与 dsh-desktop-bridge 同一套部署惯例。）
+ * （与 dsh-desktop-bridge 同一套部署惯例。）**v0.2.0 起前置依赖 dsh-plugins-norm。**
  *
  * 【三态行为职责边界】
  *   - i 场景（在光标处唤起输入窗）的窗口 spawn 由 DSH Launcher 负责：
  *     本插件不管进程、不管窗口、不管焦点，只接收 WebView 打来的 HTTP 请求。
- *   - 会话生命周期（create / followup / focus 广播 / options 查询）由本插件经
- *     Cordis 服务（ctx.agents / ctx.webServer）驱动，这是本插件的全部职权。
+ *   - 会话生命周期（create / followup / options 查询）由本插件经
+ *     Cordis 服务（ctx.agents / ctx.webServer）驱动；focus 广播移交 norm。
  *   - 进程退出即整体消亡：mini 会话不落盘、不跨重启，无需任何逐会话持久化。
- *
- * 【为什么推送通道不用 ctx.remote.$on】官方把宿主→浏览器的转发事件限制在一张
- * 白名单里（packages/api/remotes/src/remote-events.ts:17-29 的
- * API_REMOTE_FORWARDED_EVENTS），白名单不可扩展，focus-session 不在其中；
- * 因此宿主→模块推送改走本插件自有的 WebSocket 端点 /api/mini/ws（registerUpgrade）。
  */
 
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { SessionId } from "@deepseek-ai/dsh-session";
@@ -35,168 +37,6 @@ import { createUserMessage } from "@deepseek-ai/dsh-llm";
 
 export const name = "dsh-mini-dialog";
 export const inject = ["webServer", "agents"];
-
-// ---------------------------------------------------------------------------
-// 极简 WebSocket 服务端（仅广播，零依赖）
-// 为什么不用 ws 包：profile 的 node_modules 没有 ws，dsh-desktop-bridge 的惯例
-// 是零依赖；握手只需 node:crypto 的 SHA-1，帧编解码几十行。
-// 【语义陷阱备忘】registerUpgrade 的 handler 拿到的是裸 Duplex 流
-// （req, socket, head），不是现成的 WebSocket 对象；101 响应必须直接写 socket，
-// head 是随握手请求到达的首个分片（通常为空），必须喂进帧解析器。
-// ---------------------------------------------------------------------------
-
-/** RFC 6455 握手 GUID。 */
-const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-
-/** 已握手完成的连接表（模块级，跨 apply 生命周期存续；部署为重启生效，无 HMR 顾虑）。 */
-const sockets = new Set();
-
-// 【冷启动时序兜底】主应用冷启动时 WebView 尚未加载、ws 连接还没建立，
-// 此时 focus 广播落在空连接表上，跳转指令就会丢失。这里把最近一次 focus
-// 缓存为"待投递"：客户端模块连上后先发一条 {type:'hello'}，若存在未过期
-// 的待投递会话则回放给它。TTL 过期即作废，避免陈旧跳转打扰。
-let pendingFocus = null; // { sessionId: string, at: number }
-const PENDING_FOCUS_TTL_MS = 120 * 1000;
-
-/** 握手校验：Sec-WebSocket-Accept = base64(sha1(key + GUID))。 */
-function wsAcceptKey(key) {
-  return createHash("sha1").update(key + WS_GUID).digest("base64");
-}
-
-/** 编码一帧服务端帧（服务端→客户端不掩码；opcode 0x1=text，0x9=ping，0xa=pong）。 */
-function wsFrame(opcode, payload = Buffer.alloc(0)) {
-  const len = payload.length;
-  let header;
-  if (len < 126) {
-    header = Buffer.from([0x80 | opcode, len]);
-  } else if (len < 65536) {
-    header = Buffer.alloc(4);
-    header[0] = 0x80 | opcode;
-    header[1] = 126;
-    header.writeUInt16BE(len, 2);
-  } else {
-    header = Buffer.alloc(10);
-    header[0] = 0x80 | opcode;
-    header[1] = 127;
-    header.writeBigUInt64BE(BigInt(len), 2);
-  }
-  return Buffer.concat([header, payload]);
-}
-
-/**
- * 增量解析一个客户端帧（客户端帧必须掩码）。数据不足返回 null；
- * RSV 位置位（未协商扩展）视为协议错误直接 throw，由调用方断连。
- */
-function wsParseFrame(buffer) {
-  if (buffer.length < 2) return null;
-  const b0 = buffer[0];
-  const b1 = buffer[1];
-  if ((b0 & 0x70) !== 0) throw new Error("ws: RSV bits set");
-  const opcode = b0 & 0x0f;
-  const masked = (b1 & 0x80) !== 0;
-  let len = b1 & 0x7f;
-  let offset = 2;
-  if (len === 126) {
-    if (buffer.length < 4) return null;
-    len = buffer.readUInt16BE(2);
-    offset = 4;
-  } else if (len === 127) {
-    if (buffer.length < 10) return null;
-    len = Number(buffer.readBigUInt64BE(2));
-    offset = 10;
-  }
-  const maskLen = masked ? 4 : 0;
-  if (buffer.length < offset + maskLen + len) return null;
-  let payload = buffer.subarray(offset + maskLen, offset + maskLen + len);
-  if (masked) {
-    const mask = buffer.subarray(offset, offset + 4);
-    const out = Buffer.alloc(len);
-    for (let i = 0; i < len; i++) out[i] = payload[i] ^ mask[i & 3];
-    payload = out;
-  }
-  return { opcode, payload, rest: buffer.subarray(offset + maskLen + len) };
-}
-
-/** registerUpgrade 的 handler：完成握手后加入 sockets，close 时移除。 */
-function wsUpgradeHandler(req, socket, head) {
-  const key = req.headers["sec-websocket-key"];
-  const version = req.headers["sec-websocket-version"];
-  if (typeof key !== "string" || version !== "13") {
-    socket.destroy();
-    return;
-  }
-  socket.write(
-    "HTTP/1.1 101 Switching Protocols\r\n" +
-    "Upgrade: websocket\r\n" +
-    "Connection: Upgrade\r\n" +
-    `Sec-WebSocket-Accept: ${wsAcceptKey(key)}\r\n` +
-    "\r\n"
-  );
-  sockets.add(socket);
-  let buffer = head && head.length > 0 ? head : Buffer.alloc(0);
-  socket.on("data", (chunk) => {
-    buffer = Buffer.concat([buffer, chunk]);
-    // 防协议滥用：单连接缓存超 1MB 仍未构成完整帧，直接断连。
-    if (buffer.length > 1024 * 1024) {
-      socket.destroy();
-      return;
-    }
-    for (;;) {
-      let frame;
-      try {
-        frame = wsParseFrame(buffer);
-      } catch {
-        socket.destroy();
-        return;
-      }
-      if (frame === null) break;
-      buffer = frame.rest;
-      if (frame.opcode === 0x8) { // close：按 RFC 6455 回显 close 帧后再断开（审查 P1-2）
-        try { socket.write(wsFrame(0x8, frame.payload)); } catch {}
-        socket.destroy();
-        return;
-      }
-      if (frame.opcode === 0x9) { // ping → 回 pong，保活客户端心跳
-        try { socket.write(wsFrame(0xa, frame.payload)); } catch {}
-      }
-      if (frame.opcode === 0x1) { // text 帧：客户端生命周期信号（目前仅 hello）
-        let msg = null;
-        try { msg = JSON.parse(frame.payload.toString("utf8")); } catch {}
-        if (msg !== null && msg.type === "hello") {
-          const fresh = pendingFocus !== null &&
-            Date.now() - pendingFocus.at < PENDING_FOCUS_TTL_MS;
-          if (fresh) {
-            const sessionId = pendingFocus.sessionId;
-            pendingFocus = null;   // 投递即清：只回放给首个到达的 WebView
-            try {
-              socket.write(wsFrame(0x1, Buffer.from(
-                JSON.stringify({ type: "focus-session", sessionId }), "utf8")));
-            } catch {}
-          }
-        }
-        // 其余文本帧 v1 忽略；继续消化缓冲区里可能的后续帧（不可 return）
-      }
-    }
-  });
-  socket.on("close", () => {
-    sockets.delete(socket);
-  });
-  socket.on("error", () => {
-    socket.destroy();
-  });
-}
-
-/** 向所有已连接 WebView 广播一个 JSON 对象（focus-session 推送）。 */
-function broadcast(obj) {
-  const text = JSON.stringify(obj);
-  for (const socket of sockets) {
-    try {
-      socket.write(wsFrame(0x1, Buffer.from(text, "utf8")));
-    } catch {
-      // 写失败说明连接已死，交给 close 事件从集合移除
-    }
-  }
-}
 
 export function apply(ctx) {
   // 【会话泄漏防护 · v1 取舍】
@@ -377,22 +217,6 @@ export function apply(ctx) {
     },
   }));
 
-  // ---- WebSocket 推送通道（/api/mini/ws，HTTP Upgrade）----
-  // 组合 effect：卸载时先释放 upgrade 路由，再断开所有连接。
-  ctx.effect(() => {
-    const disposeUpgrade = ctx.webServer.registerUpgrade({
-      path: "/api/mini/ws",
-      handler: wsUpgradeHandler,
-    });
-    return () => {
-      disposeUpgrade();
-      for (const socket of sockets) {
-        try { socket.destroy(); } catch {}
-      }
-      sockets.clear();
-    };
-  });
-
   // ---- POST /api/mini/focus ----
   // Launcher 在主应用打开后调用：把选中会话广播给所有已连 WebView。
   ctx.effect(() => ctx.webServer.register({
@@ -408,12 +232,21 @@ export function apply(ctx) {
         if (typeof sessionId !== "string" || sessionId.length === 0) {
           return sendJson(res, 400, { ok: false, error: "sessionId 必须为非空字符串" });
         }
-        // 连接表为空也回 ok：主应用 WebView 未打开是正常态，
-        // 客户端下次连上时由 Launcher 侧负责补发（或用户手动点开）。
-        broadcast({ type: "focus-session", sessionId });
-        // 同步登记为待投递：冷启动场景（连接表为空）时由 hello 握手回放
-        pendingFocus = { sessionId, at: Date.now() };
-        sendJson(res, 200, { ok: true, delivered: sockets.size });
+        // 【norm 接管】ctx.get 惰性解析而非 inject：norm 缺席时 focus 应得到
+        // 明确的 503 指引（部署 norm），而不是把整个插件拖进 fail-fast。norm
+        // 的 provide 在其 apply 时即实例化，请求期 ctx.get 必可解析——与惰性
+        // 服务（agents 那种"没实例化拿不到"）不同。
+        const norm = typeof ctx.get === "function" ? ctx.get("dshPluginsNorm") : null;
+        if (norm && typeof norm.focus === "function") {
+          const { sent } = norm.focus(sessionId);
+          // 连接表为空也回 ok（sent=0）：主应用 WebView 未打开是正常态，
+          // norm 侧有 TTL 120s 的待投递回放兜冷启动时序。
+          return sendJson(res, 200, { ok: true, via: "norm", sent });
+        }
+        return sendJson(res, 503, {
+          ok: false,
+          error: "dsh-plugins-norm 未加载（v0.2.0 起 focus 通道由 norm 提供）；请部署 dsh-plugins-norm 后重试，或回滚到 v0.1.0（自带 client 脸）",
+        });
       } catch (error) {
         reportError(res, error);
       }
@@ -516,5 +349,5 @@ export function apply(ctx) {
     return { ...config, reasoningEffort: effort };
   }));
 
-  ctx.logger.info("dsh-mini-dialog: session.new + session.send + focus + options + reasoning + /api/mini/ws ready");
+  ctx.logger.info("dsh-mini-dialog: session.new + session.send + focus(via norm) + options + reasoning ready");
 }

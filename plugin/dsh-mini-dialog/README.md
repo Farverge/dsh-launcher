@@ -138,3 +138,5 @@ node --check lib/index.js
 node --check lib/client.js
 npm test   # test/smoke.mjs：语法 + 桩环境真实 import（不启动后端，不碰 127.0.0.1:3080）
 ```
+
+> **v0.2.0（2026-09-01）**：client 脸退役——会话跳转的浏览器端执行移交 `dsh-plugins-norm`（家族漂移屏蔽层），本插件聚焦宿主路由（session.new / session.send / options / reasoning）；`/api/mini/focus` 改经 norm 稳定面广播，norm 缺席时返回 503 指引。**部署前置：dsh-plugins-norm ≥ 1.0.1。** 回滚：恢复 v0.1.0（自带 client 脸）。

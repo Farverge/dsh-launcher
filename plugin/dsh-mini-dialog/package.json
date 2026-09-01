@@ -1,32 +1,16 @@
 {
   "name": "dsh-mini-dialog",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
-    "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
   "license": "MIT",
   "scripts": {
     "test": "node test/smoke.mjs"
   },
-  "dsh": {
-    "client": {
-      "platform": "web",
-      "inject": [
-        "@deepseek-ai/dsh-api-remotes",
-        "@deepseek-ai/dsh-api-session-controller",
-        "@deepseek-ai/dsh-api-workspace-controller",
-        "@deepseek-ai/dsh-client-connection",
-        "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-ui-conversation",
-        "@deepseek-ai/dsh-client-ui-renderer",
-        "@deepseek-ai/dsh-client-ui-session",
-        "@deepseek-ai/dsh-client-ui-sidebar"
-      ]
-    }
-  }
+  "description": "DSH 迷你对话插件（宿主侧）：迷你框会话创建/发送/跳转路由；v0.2.0 起 focus 通道由 dsh-plugins-norm 承载"
 }
