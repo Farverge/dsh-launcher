@@ -17,7 +17,7 @@ APP_NAME="DSH Launcher.app"
 BUNDLE_ID="com.deepseek-ai.dsh-launcher"
 PLUGIN_NAME="dsh-mini-dialog"
 PROFILE_WEB="${HOME}/.dsh/profiles/web"
-PLUGIN_DEST="${HOME}/.dsh/profiles/node_modules/${PLUGIN_NAME}"
+PLUGIN_DEST="${HOME}/.dsh/profiles/web/node_modules/${PLUGIN_NAME}"
 INSTALL_DEST="${HOME}/Library/Application Support"
 
 KEEP_PLUGIN=0

@@ -20,7 +20,7 @@ BUNDLE_ID="com.deepseek-ai.dsh-launcher"
 ASSET="DSH.Launcher.zip"                       # 稳定资产名（GitHub 空格归一为点号），跨版本不变
 PLUGIN_NAME="dsh-mini-dialog"
 PROFILE_WEB="${HOME}/.dsh/profiles/web"
-PLUGIN_DEST="${HOME}/.dsh/profiles/node_modules/${PLUGIN_NAME}"
+PLUGIN_DEST="${HOME}/.dsh/profiles/web/node_modules/${PLUGIN_NAME}"
 INSTALL_DEST="${HOME}/Library/Application Support"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
