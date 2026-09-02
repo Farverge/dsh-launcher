@@ -2,7 +2,7 @@
 //
 // 约束：不启动任何 node 后端实例、不访问 127.0.0.1。
 //
-// 策略说明（v0.2.0：client 脸已退役，focus 通道由 dsh-plugins-norm 承载）：
+// 策略说明（v0.2.0：client 脸已退役，focus 通道由 dsh-plugin-norm 承载）：
 //   1. 语法正确（node --check lib/index.js）；
 //   2. 宿主脸（index.js）在临时桩环境真实 import：@deepseek-ai/dsh-llm、
 //     @deepseek-ai/dsh-session 用最小桩（只导出本插件确实用到的名字），
@@ -92,7 +92,7 @@ const fail = (msg) => {
       if (source.includes(path)) pass(`apply 注册了 ${path}`);
       else fail(`apply 缺少 ${path}`);
     }
-    if (source.includes('ctx.get("dshPluginsNorm")')) pass("focus 经 norm 稳定面（ctx.get 惰性解析）");
+    if (source.includes('ctx.get("dshPluginNorm")')) pass("focus 经 norm 稳定面（ctx.get 惰性解析）");
     else fail("focus 未走 norm 稳定面");
     if (source.includes("norm.focus(sessionId)")) pass("focus 调用 norm.focus（含审计）");
     else fail("focus 未调用 norm.focus");

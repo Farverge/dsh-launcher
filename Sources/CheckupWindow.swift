@@ -7,7 +7,7 @@ import AppKit
 ///   一行 `[✓|!|✗] 名称 数值`，按真实检测结果推进，不做预渲染假进度
 /// - 检查维度（全只读）：系统 / Node / 应用签名 / 端口身份 / 后端通道形态
 ///   （稳定通道 200=健康 · alpha 认证链 401+文案=健康）/ 桥接接口 / norm 协议层
-///   （dsh-plugins-norm caps 路由，免认证）/ profile 工作区装配（alpha.3 白屏坑）/
+///   （dsh-plugin-norm caps 路由，免认证）/ profile 工作区装配（alpha.3 白屏坑）/
 ///   mini-dialog 版本 / npx 副本 / 缓存体量
 /// - 动作按钮（体检完成后按结果出现，用户点按才执行，绝不在体检过程中自动执行）：
 ///   释放 npm 缓存（`npm cache clean --force`）、打开 npx 目录（Finder）、重新体检
@@ -421,10 +421,10 @@ final class CheckupWindowController {
         }
     }
 
-    /// norm 协议层：dsh-plugins-norm 是家族漂移屏蔽层，caps 路由免认证。
+    /// norm 协议层：dsh-plugin-norm 是家族漂移屏蔽层，caps 路由免认证。
     /// 200 → 报 norm 版本 / 探测计数 / 降级清单；404 或连接失败 → 未部署（跳转通道降级）。
     private static func checkNormCaps() async -> Result {
-        guard let url = URL(string: "http://127.0.0.1:3080/api/dsh-plugins-norm/caps") else {
+        guard let url = URL(string: "http://127.0.0.1:3080/api/dsh-plugin-norm/caps") else {
             return Result(mark: "✗", name: "norm 协议 ", value: "URL 构造失败", color: nodeRed)
         }
         do {

@@ -48,7 +48,7 @@ curl -fsSL https://raw.githubusercontent.com/iiiiiei/dsh-launcher/main/install.s
 
 发送链路：确保后端运行（不在则代为拉起）→ 创建会话（按所选工作区 / 模型 / 思考强度）→ 收起胶囊 → 自动打开主应用 → 新会话出现在列表顶部，配套的会话内跳转随之生效。
 
-> **会话直达跳转的前置**：跳转由 [dsh-plugins-norm](https://github.com/iiiiiei/dsh-plugin-norm)（≥ 1.0.1）承载。norm 未部署时发送与建会话不受影响，仅自动跳转降级（mini-dialog 0.2.0 起此时返回 503 指引）。部署见 [Build](Build.md#4-插件装配dsh-mini-dialog)。
+> **会话直达跳转的前置**：跳转由 [dsh-plugin-norm](https://github.com/iiiiiei/dsh-plugin-norm)（≥ 1.0.1）承载。norm 未部署时发送与建会话不受影响，仅自动跳转降级（mini-dialog 0.2.0 起此时返回 503 指引）。部署见 [Build](Build.md#4-插件装配dsh-mini-dialog)。
 
 > **三态判定**：应用未启动或不可见时，`⌘⇧D` 与左键都会弹迷你框；主应用在前台可见时快捷键静默失效——永远只有一个输入面，不会双开。
 

@@ -1,6 +1,6 @@
 {
   "name": "dsh-mini-dialog",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
@@ -12,5 +12,5 @@
   "scripts": {
     "test": "node test/smoke.mjs"
   },
-  "description": "DSH 迷你对话插件（宿主侧）：迷你框会话创建/发送/跳转路由；v0.2.0 起 focus 通道由 dsh-plugins-norm 承载"
+  "description": "DSH 迷你对话插件（宿主侧）：迷你框会话创建/发送/跳转路由；v0.2.0 起 focus 通道由 dsh-plugin-norm 承载"
 }

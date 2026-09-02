@@ -4,13 +4,13 @@
  * 为桌面 Launcher 内嵌的 WebView 提供一组轻量会话 HTTP 路由：
  *   POST /api/mini/session.new    新建会话（可选 cwd / provider / model），并立即送入首条消息
  *   POST /api/mini/session.send   向既有会话追加一条用户消息
- *   POST /api/mini/focus          会话跳转——v0.2.0 起改经 dsh-plugins-norm 稳定面广播
+ *   POST /api/mini/focus          会话跳转——v0.2.0 起改经 dsh-plugin-norm 稳定面广播
  *   GET  /api/mini/options        尽力而为返回可选 provider / 默认模型
  *   GET  /api/mini/reasoning      思考强度档位查询
  *
  * 【v0.2.0 重大变更：client 脸退役】本插件不再有自己的浏览器模块（旧
  * client 脚本、自有 WS 升级通道、dsh.client 声明全部移除）。原因与去向：
- * 会话跳转的浏览器端执行（ctx.sessions.open）整体移交 dsh-plugins-norm
+ * 会话跳转的浏览器端执行（ctx.sessions.open）整体移交 dsh-plugin-norm
  * （家族漂移屏蔽层，唯一允许接触官方 client 服务的插件）。本插件的 focus
  * 路由改为惰性解析 norm 服务并调用其 focus()——norm 缺席时返回 503 与
  * 明确指引（回滚方案：恢复 v0.1.0 的自带 client 脸）。这一刀切掉了：
@@ -19,7 +19,7 @@
  *
  * 【部署方式】整个包拷入 ~/.dsh/profiles/node_modules/dsh-mini-dialog/，
  * 然后在 cordis.patch.yml 的 insert 列表补一行 `name: dsh-mini-dialog`，重启生效。
- * （与 dsh-desktop-bridge 同一套部署惯例。）**v0.2.0 起前置依赖 dsh-plugins-norm。**
+ * （与 dsh-desktop-bridge 同一套部署惯例。）**v0.2.0 起前置依赖 dsh-plugin-norm。**
  *
  * 【三态行为职责边界】
  *   - i 场景（在光标处唤起输入窗）的窗口 spawn 由 DSH Launcher 负责：
@@ -236,7 +236,7 @@ export function apply(ctx) {
         // 明确的 503 指引（部署 norm），而不是把整个插件拖进 fail-fast。norm
         // 的 provide 在其 apply 时即实例化，请求期 ctx.get 必可解析——与惰性
         // 服务（agents 那种"没实例化拿不到"）不同。
-        const norm = typeof ctx.get === "function" ? ctx.get("dshPluginsNorm") : null;
+        const norm = typeof ctx.get === "function" ? ctx.get("dshPluginNorm") : null;
         if (norm && typeof norm.focus === "function") {
           const { sent } = norm.focus(sessionId);
           // 连接表为空也回 ok（sent=0）：主应用 WebView 未打开是正常态，
@@ -245,7 +245,7 @@ export function apply(ctx) {
         }
         return sendJson(res, 503, {
           ok: false,
-          error: "dsh-plugins-norm 未加载（v0.2.0 起 focus 通道由 norm 提供）；请部署 dsh-plugins-norm 后重试，或回滚到 v0.1.0（自带 client 脸）",
+          error: "dsh-plugin-norm 未加载（v0.2.0 起 focus 通道由 norm 提供）；请部署 dsh-plugin-norm 后重试，或回滚到 v0.1.0（自带 client 脸）",
         });
       } catch (error) {
         reportError(res, error);

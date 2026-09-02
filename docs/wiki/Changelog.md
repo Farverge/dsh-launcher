@@ -4,15 +4,15 @@
 
 ### 配套插件 dsh-mini-dialog → v0.2.0（plugin/，随 Launcher 分发）
 
-- client 脸退役：会话跳转的浏览器端执行（`ctx.sessions.open`）整体移交 dsh-plugins-norm；自有 WS 通道（`/api/mini/ws`）与 9 包 inject 声明全部移除，插件收敛为宿主单脸
+- client 脸退役：会话跳转的浏览器端执行（`ctx.sessions.open`）整体移交 dsh-plugin-norm；自有 WS 通道（`/api/mini/ws`）与 9 包 inject 声明全部移除，插件收敛为宿主单脸
 - `/api/mini/focus` 改经 norm 稳定面广播；norm 缺席时返回 503 部署指引，不拖垮发送主链
-- **部署前置：dsh-plugins-norm ≥ 1.0.1**，且装卸必须与 cordis.patch.yml 条目同步（patch 引用缺失包会拒启整个 profile）
+- **部署前置：dsh-plugin-norm ≥ 1.0.1**，且装卸必须与 cordis.patch.yml 条目同步（patch 引用缺失包会拒启整个 profile）
 - 冒烟测试重写为 19 项（focus 走 norm 稳定面、无自有 WS 残留等断言）
 
-### 新家族插件 dsh-plugins-norm v1.0.1（[iiiiiei/dsh-plugin-norm](https://github.com/iiiiiei/dsh-plugin-norm)）
+### 新家族插件 dsh-plugin-norm v1.0.1（[iiiiiei/dsh-plugin-norm](https://github.com/iiiiiei/dsh-plugin-norm)）
 
-- 家族漂移屏蔽层：唯一允许接触官方接口的插件，对外提供稳定面——`GET /api/dsh-plugins-norm/caps`（部署体检锚点：宿主形状探测 + 客户端上报合并 + 降级清单）、`POST /api/dsh-plugins-norm/focus`（会话跳转广播，含 lastFocusResult 审计）、`/api/dsh-plugins-norm/ws` 被动事件通道
-- client 侧 `window.__dshPluginsNorm` 微内核（on / caps / focusSession，会话跳转三级降级链）；全程零轮询零缓存
+- 家族漂移屏蔽层：唯一允许接触官方接口的插件，对外提供稳定面——`GET /api/dsh-plugin-norm/caps`（部署体检锚点：宿主形状探测 + 客户端上报合并 + 降级清单）、`POST /api/dsh-plugin-norm/focus`（会话跳转广播，含 lastFocusResult 审计）、`/api/dsh-plugin-norm/ws` 被动事件通道
+- client 侧 `window.__dshPluginNorm` 微内核（on / caps / focusSession，会话跳转三级降级链）；全程零轮询零缓存
 
 ### 一键体检大修（七项 → 十一项）
 

@@ -9,12 +9,12 @@ DSH 迷你对话插件（宿主单脸）。为桌面 Launcher 提供迷你框的
 
 ## v0.2.0 重大变更：client 脸退役
 
-会话跳转的浏览器端执行（`ctx.sessions.open`）整体移交 **`dsh-plugins-norm`**
+会话跳转的浏览器端执行（`ctx.sessions.open`）整体移交 **`dsh-plugin-norm`**
 （家族漂移屏蔽层，唯一允许接触官方接口的插件）。本插件 v0.2.0 起：
 
 - 移除 `lib/client.js`、`package.json` 的 `dsh.client` 声明、自有 WS 通道（`/api/mini/ws`）
 - `POST /api/mini/focus` 改经 norm 稳定面广播（norm 缺席时返回 503 与部署指引）
-- **部署前置：dsh-plugins-norm ≥ 1.0.1**，且装卸必须与 `cordis.patch.yml` 条目同步
+- **部署前置：dsh-plugin-norm ≥ 1.0.1**，且装卸必须与 `cordis.patch.yml` 条目同步
   （patch 引用缺失包会拒启整个 profile）
 - 回滚：恢复 v0.1.0（自带 client 脸）
 
@@ -35,7 +35,7 @@ dsh-mini-dialog/
 |---|---|---|
 | POST | `/api/mini/session.new` | 新建会话（可选 `cwd`/`provider`/`model`/`reasoning`），立即送入首条消息，返回 `sessionId` |
 | POST | `/api/mini/session.send` | 向既有会话追加一条用户消息 |
-| POST | `/api/mini/focus` | 会话跳转——经 `dsh-plugins-norm` 稳定面广播（Launcher 打开主应用后调用） |
+| POST | `/api/mini/focus` | 会话跳转——经 `dsh-plugin-norm` 稳定面广播（Launcher 打开主应用后调用） |
 | GET  | `/api/mini/options` | 尽力而为返回可选 provider（含各 provider 模型清单）与默认模型 |
 | GET  | `/api/mini/reasoning?provider=&model=` | 返回某路由的思考强度档位（无则空清单） |
 
@@ -75,7 +75,7 @@ curl -s http://127.0.0.1:3080/api/mini/options
 
 ## 装配（cordis.patch.yml）
 
-前置：`dsh-plugins-norm ≥ 1.0.1` 已部署（同套 node_modules/patch 机制）。
+前置：`dsh-plugin-norm ≥ 1.0.1` 已部署（同套 node_modules/patch 机制）。
 把整个包拷入 `~/.dsh/profiles/node_modules/dsh-mini-dialog/`，然后在
 `cordis.patch.yml` 的 insert 列表补一行，重启生效：
 
@@ -99,7 +99,7 @@ curl -s http://127.0.0.1:3080/api/mini/options
 | `SessionId(string)` | 品牌化会话 id（来自 `@deepseek-ai/dsh-session`） | `docs/subsystems/core.md`（Branded IDs） |
 | `ctx.get('llm').listProviders() / listModels()` | 可选 provider 与模型清单（尽力而为） | 官方 `packages/llm/llm/src/index.ts` |
 | `ctx.get('agentDefaultModel').currentSelection()` | 当前默认模型（尽力而为） | `docs/subsystems/core.md`（`ctx.agentDefaultModel`） |
-| `ctx.get('dshPluginsNorm').focus(sessionId)` | 会话跳转广播（v0.2.0 起；norm 缺席时本路由 503） | `dsh-plugins-norm` 仓库 README |
+| `ctx.get('dshPluginNorm').focus(sessionId)` | 会话跳转广播（v0.2.0 起；norm 缺席时本路由 503） | `dsh-plugin-norm` 仓库 README |
 
 要点备忘：
 

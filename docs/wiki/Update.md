@@ -14,7 +14,7 @@ Launcher、主应用、DSH 后端三者的更新关系与准确流程。
 | DSH Desktop 主应用 | `Farverge/DSH-MacOS` 的 Release tag | 主应用设置 → 检查应用更新 |
 | dsh 后端 | npm `@deepseek-ai/dsh` | 主应用设置 → 检查 DSH 更新（先查后问，自动清缓存并重启后端） |
 | mini-dialog 插件 | 随 Launcher Release 分发（安装脚本或主应用 v1.0.3+ 自动更新都会同步部署，卸载即移除） | 随 Launcher 更新同步 |
-| dsh-plugins-norm 插件 | [iiiiiei/dsh-plugin-norm](https://github.com/iiiiiei/dsh-plugin-norm)（独立发布，不随 Launcher 分发） | mini-dialog 0.2.0 起的前置（≥ 1.0.1）；装卸须与 cordis.patch.yml 条目同步 |
+| dsh-plugin-norm 插件 | [iiiiiei/dsh-plugin-norm](https://github.com/iiiiiei/dsh-plugin-norm)（独立发布，不随 Launcher 分发） | mini-dialog 0.2.0 起的前置（≥ 1.0.1）；装卸须与 cordis.patch.yml 条目同步 |
 
 套件内三者版本节奏保持同步发布（同一发版窗口打各自 tag）。
 
@@ -38,6 +38,6 @@ Launcher、主应用、DSH 后端三者的更新关系与准确流程。
 
 ## 4. 0.1.2-alpha 通道的插件适配（2026-09-01）
 
-- **mini-dialog（v0.2.0 起）**：client 脸已退役——会话跳转的浏览器端执行整体移交 `dsh-plugins-norm`（家族漂移屏蔽层，仓库 [iiiiiei/dsh-plugin-norm](https://github.com/iiiiiei/dsh-plugin-norm)），`/api/mini/focus` 改经 norm 稳定面广播（norm 缺席时返回 503 指引）。**部署前置：dsh-plugins-norm ≥ 1.0.1**（装卸须与 cordis.patch.yml 条目同步，否则整个 profile 拒绝启动）。host API（/api/mini/*）不受影响。**注意**：插件 bundle 只能经页面启动图（`__DSH_BOOT__`）的合并 URL 加载，纯路径 `/plugins/<id>/client.js` 返回 404 属官方行为
+- **mini-dialog（v0.2.0 起）**：client 脸已退役——会话跳转的浏览器端执行整体移交 `dsh-plugin-norm`（家族漂移屏蔽层，仓库 [iiiiiei/dsh-plugin-norm](https://github.com/iiiiiei/dsh-plugin-norm)），`/api/mini/focus` 改经 norm 稳定面广播（norm 缺席时返回 503 指引）。**部署前置：dsh-plugin-norm ≥ 1.0.1**（装卸须与 cordis.patch.yml 条目同步，否则整个 profile 拒绝启动）。host API（/api/mini/*）不受影响。**注意**：插件 bundle 只能经页面启动图（`__DSH_BOOT__`）的合并 URL 加载，纯路径 `/plugins/<id>/client.js` 返回 404 属官方行为
 - **汉化（dsh-l10n-zh，随主应用生态）**：0.1.2-alpha 上原样可用，无需适配
 - 壳侧（DSH Desktop v1.0.6+）已全自动适配 alpha 认证链，详见 [DSH-MacOS wiki · 更新](https://github.com/Farverge/DSH-MacOS/wiki)

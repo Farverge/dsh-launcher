@@ -40,7 +40,7 @@ curl -fsSL https://raw.githubusercontent.com/iiiiiei/dsh-launcher/main/uninstall
 
 手动方式：到 [Releases](https://github.com/iiiiiei/dsh-launcher/releases) 下载 `DSH.Launcher.zip`，解压后把 `DSH Launcher.app` 拖入 `~/Library/Application Support/`。
 
-> 建议与 [DSH Desktop](https://github.com/Farverge/DSH-MacOS) v1.0.0+ 搭配使用；迷你对话框由随装部署的 dsh-mini-dialog 插件驱动（v0.2.0 起会话直达跳转前置 [dsh-plugins-norm](https://github.com/iiiiiei/dsh-plugin-norm) ≥ 1.0.1，见 [Wiki · 构建](docs/wiki/Build.md#4-插件装配dsh-mini-dialog)）。
+> 建议与 [DSH Desktop](https://github.com/Farverge/DSH-MacOS) v1.0.0+ 搭配使用；迷你对话框由随装部署的 dsh-mini-dialog 插件驱动（v0.2.0 起会话直达跳转前置 [dsh-plugin-norm](https://github.com/iiiiiei/dsh-plugin-norm) ≥ 1.0.1，见 [Wiki · 构建](docs/wiki/Build.md#4-插件装配dsh-mini-dialog)）。
 
 ## 它是如何工作的
 
