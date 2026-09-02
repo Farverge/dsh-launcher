@@ -11,10 +11,10 @@
 一键命令（推荐）——自动下载安装菜单栏应用，并随装部署 mini-dialog 后端插件：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Farverge/DSH-Launcher/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/iiiiiei/dsh-launcher/main/install.sh | bash
 ```
 
-手动方式：到 [Releases](https://github.com/Farverge/DSH-Launcher/releases) 下载 `DSH.Launcher.zip`，解压后把 `DSH Launcher.app` 拖入 `~/Library/Application Support/`；插件部署见 [Build](Build.md#4-插件装配dsh-mini-dialog)。
+手动方式：到 [Releases](https://github.com/iiiiiei/dsh-launcher/releases) 下载 `DSH.Launcher.zip`，解压后把 `DSH Launcher.app` 拖入 `~/Library/Application Support/`；插件部署见 [Build](Build.md#4-插件装配dsh-mini-dialog)。
 
 > **为什么不是 /Applications**：私有目录不在启动台扫描范围（启动台只索引 /Applications）， Launcher 因此只作为菜单栏常驻工具存在，不打扰启动台；主应用经同一目录发现并管理它。
 
@@ -48,25 +48,33 @@ curl -fsSL https://raw.githubusercontent.com/Farverge/DSH-Launcher/main/install.
 
 发送链路：确保后端运行（不在则代为拉起）→ 创建会话（按所选工作区 / 模型 / 思考强度）→ 收起胶囊 → 自动打开主应用 → 新会话出现在列表顶部，配套的会话内跳转随之生效。
 
+> **会话直达跳转的前置**：跳转由 [dsh-plugins-norm](https://github.com/iiiiiei/dsh-plugin-norm)（≥ 1.0.1）承载。norm 未部署时发送与建会话不受影响，仅自动跳转降级（mini-dialog 0.2.0 起此时返回 503 指引）。部署见 [Build](Build.md#4-插件装配dsh-mini-dialog)。
+
 > **三态判定**：应用未启动或不可见时，`⌘⇧D` 与左键都会弹迷你框；主应用在前台可见时快捷键静默失效——永远只有一个输入面，不会双开。
 
 ## 5. 一键体检（终端风小窗）
 
-右键菜单 → 一键体检。独立 460×320 起步的可拉伸小窗，逐行即时刷出七项只读检测：macOS 版本 / Node / 应用签名 / 端口身份 / 桥接接口 / npx 副本数 / 缓存体量，末尾汇总建议，支持复制纯文本报告。全程只读，不杀任何进程，可边体检边使用主应用。
+右键菜单 → 一键体检。独立 640×400 起步的可拉伸小窗，逐行即时刷出十一项只读检测：操作系统 / Node / 应用签名 / 端口身份 / 后端通道（认证形态感知——稳定通道 200 = 健康，alpha 认证链 401 应答 = 健康）/ 桥接接口 / norm 协议层 / mini 对话框版本 / profile 工作区装配（缺失即 GUI 白屏的 alpha.3+ 坑）/ npx 副本数 / 缓存体量，末尾汇总建议，支持复制纯文本报告。全程只读，不杀任何进程，可边体检边使用主应用。
+
+体检完成后按结果出现**条件动作按钮**（点按才执行，绝不在体检过程中自动执行）：
+
+- **释放 npm 缓存**：真实执行 `npm cache clean --force`（只清 `_cacache`，不动 `_npx` 副本目录），完成后自动重测「缓存体量」行
+- **打开 npx 目录**：在 Finder 中打开 `~/.npm/_npx`，便于手动清点多副本
+- 常驻按钮另有 [重新体检] / [复制报告] / [关闭]；窗口不悬浮置顶——动作会把工作交接给 Finder/终端
 
 ## 6. 与主应用的设置联动
 
 主应用 `⌘,` → 菜单栏插件区（该区域随 Launcher 安装与否自动显隐）：
 
 - 启用 / 停用（菜单栏常驻开关）
-- **检查 Launcher 更新**：以 `Farverge/DSH-Launcher` 的最新 Release 为版本源，点击才联网
+- **检查 Launcher 更新**：以 `iiiiiei/dsh-launcher` 的最新 Release 为版本源，点击才联网
 
 ## 7. 退出与卸载
 
 一键卸载（退出应用 + 移除本体 + 随装移除 mini-dialog 插件及其装配条目）：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Farverge/DSH-Launcher/main/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/iiiiiei/dsh-launcher/main/uninstall.sh | bash
 ```
 
 追加 `--keep-plugin`（`bash -s -- --keep-plugin`）可保留插件仅移除应用本体。插件移除在后端重启后生效；不触碰主应用与任何会话数据。

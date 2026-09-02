@@ -10,10 +10,11 @@ Launcher、主应用、DSH 后端三者的更新关系与准确流程。
 
 | 层 | 版本源 | 更新方式 |
 |---|---|---|
-| DSH Launcher | `Farverge/DSH-Launcher` 的 Release tag | 主应用设置 → 菜单栏插件 → 检查 Launcher 更新（v1.0.3+ 确认后自动下载换壳，见第 2 节） |
+| DSH Launcher | `iiiiiei/dsh-launcher` 的 Release tag | 主应用设置 → 菜单栏插件 → 检查 Launcher 更新（v1.0.3+ 确认后自动下载换壳，见第 2 节） |
 | DSH Desktop 主应用 | `Farverge/DSH-MacOS` 的 Release tag | 主应用设置 → 检查应用更新 |
 | dsh 后端 | npm `@deepseek-ai/dsh` | 主应用设置 → 检查 DSH 更新（先查后问，自动清缓存并重启后端） |
 | mini-dialog 插件 | 随 Launcher Release 分发（安装脚本或主应用 v1.0.3+ 自动更新都会同步部署，卸载即移除） | 随 Launcher 更新同步 |
+| dsh-plugins-norm 插件 | [iiiiiei/dsh-plugin-norm](https://github.com/iiiiiei/dsh-plugin-norm)（独立发布，不随 Launcher 分发） | mini-dialog 0.2.0 起的前置（≥ 1.0.1）；装卸须与 cordis.patch.yml 条目同步 |
 
 套件内三者版本节奏保持同步发布（同一发版窗口打各自 tag）。
 
@@ -27,7 +28,7 @@ Launcher、主应用、DSH 后端三者的更新关系与准确流程。
   1. 下载 `DSH.Launcher.zip` → 解包校验（.app 结构 / 可执行文件 / Info.plist 版本与 Release 一致）
   2. **先同步 mini-dialog 插件**到 `~/.dsh/profiles/node_modules/`（此步失败自动恢复原插件并整体中止，不连坐主程序）；幂等维护 `cordis.patch.yml` 装配条目
   3. 退出 Launcher → 分离脚本换壳（旧包备份至 `~/Library/Application Support/DSH Backups/`，保留最近 2 份）→ 自动启动新版
-- 主应用低于 v1.0.3 时为旧行为：仅提示，到 [Releases](https://github.com/Farverge/DSH-Launcher/releases) 下载 zip 按 [Usage](Usage.md#1-安装) 手动覆盖安装
+- 主应用低于 v1.0.3 时为旧行为：仅提示，到 [Releases](https://github.com/iiiiiei/dsh-launcher/releases) 下载 zip 按 [Usage](Usage.md#1-安装) 手动覆盖安装
 
 ## 3. 更新时的兼容关系
 
@@ -37,6 +38,6 @@ Launcher、主应用、DSH 后端三者的更新关系与准确流程。
 
 ## 4. 0.1.2-alpha 通道的插件适配（2026-09-01）
 
-- **mini-dialog（v0.2.0 起）**：client 脸已退役——会话跳转的浏览器端执行整体移交 `dsh-plugins-norm`（家族漂移屏蔽层），`/api/mini/focus` 改经 norm 稳定面广播（norm 缺席时返回 503 指引）。**部署前置：dsh-plugins-norm ≥ 1.0.1**（装卸须与 cordis.patch.yml 条目同步，否则整个 profile 拒绝启动）。host API（/api/mini/*）不受影响。**注意**：插件 bundle 只能经页面启动图（`__DSH_BOOT__`）的合并 URL 加载，纯路径 `/plugins/<id>/client.js` 返回 404 属官方行为
+- **mini-dialog（v0.2.0 起）**：client 脸已退役——会话跳转的浏览器端执行整体移交 `dsh-plugins-norm`（家族漂移屏蔽层，仓库 [iiiiiei/dsh-plugin-norm](https://github.com/iiiiiei/dsh-plugin-norm)），`/api/mini/focus` 改经 norm 稳定面广播（norm 缺席时返回 503 指引）。**部署前置：dsh-plugins-norm ≥ 1.0.1**（装卸须与 cordis.patch.yml 条目同步，否则整个 profile 拒绝启动）。host API（/api/mini/*）不受影响。**注意**：插件 bundle 只能经页面启动图（`__DSH_BOOT__`）的合并 URL 加载，纯路径 `/plugins/<id>/client.js` 返回 404 属官方行为
 - **汉化（dsh-l10n-zh，随主应用生态）**：0.1.2-alpha 上原样可用，无需适配
 - 壳侧（DSH Desktop v1.0.6+）已全自动适配 alpha 认证链，详见 [DSH-MacOS wiki · 更新](https://github.com/Farverge/DSH-MacOS/wiki)

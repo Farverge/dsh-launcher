@@ -53,9 +53,13 @@ mv ~/Library/Application\ Support/"DSH Launcher.app.bak-<时间戳>" \
 
 3. 重启 DSH 后端生效
 
+**前置依赖（mini-dialog 0.2.0 起）**：会话跳转通道由 **dsh-plugins-norm ≥ 1.0.1** 承载——家族漂移屏蔽层，唯一允许接触官方接口的插件，仓库 [iiiiiei/dsh-plugin-norm](https://github.com/iiiiiei/dsh-plugin-norm)（包名 / 服务名 / 路由前缀是 `dsh-plugins-norm`，仓库名无 s）。norm 不随 Launcher Release 分发，按其仓库说明单独部署（同一套 profiles 拷入 + cordis.patch.yml 条目 + 重启后端惯例）。
+
+**装卸同步红线**：插件的装卸必须与 cordis.patch.yml 条目同步——patch 引用了 node_modules 里不存在的包时，**整个 profile 会拒绝启动**（install.sh 的幂等写入与 uninstall.sh 的两行剥离即为此设计；手动装卸务必成对维护）。
+
 卸载侧的对称移除由 uninstall.sh 处理（含装配条目的两行剥离，已沙盒验证不误伤其他插件条目）。
 
-插件冒烟测试（不启动后端、不访问网络）：
+插件冒烟测试（不启动后端、不访问网络；v0.2.0 起重写为 19 项，覆盖 focus 走 norm 稳定面、无自有 WS 残留等断言）：
 
 ```bash
 cd plugin/dsh-mini-dialog && node test/smoke.mjs

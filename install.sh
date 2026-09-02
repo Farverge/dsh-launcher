@@ -2,7 +2,7 @@
 # DSH Launcher 一键安装脚本
 #
 # 用法：
-#   curl -fsSL https://raw.githubusercontent.com/Farverge/DSH-Launcher/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/iiiiiei/dsh-launcher/main/install.sh | bash
 #       三段式：① 环境预检 ② 下载安装 ③ 启动与状态回馈
 #
 # 行为：安装菜单栏应用 + 随包部署 dsh-mini-dialog 后端插件（迷你对话框的会话
@@ -13,7 +13,7 @@
 # 说明：curl 下载的文件不带隔离标记，Gatekeeper 不介入，无需任何签名证书。
 set -euo pipefail
 
-REPO="Farverge/DSH-Launcher"
+REPO="iiiiiei/dsh-launcher"
 BASE_URL="https://github.com/${REPO}"
 APP_NAME="DSH Launcher.app"
 BUNDLE_ID="com.deepseek-ai.dsh-launcher"

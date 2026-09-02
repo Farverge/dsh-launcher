@@ -21,7 +21,7 @@ DSH Launcher 是 [DSH Desktop](https://github.com/Farverge/DSH-MacOS) 的菜单�
 
 - **三态状态图标**：后端健康 / 过渡（？闪烁）/ 异常（！），自适应轮询，不缓存状态
 - **迷你对话框**（`⌘⇧D`）：单行胶囊，选工作区、选模型、选思考强度，回车发送后自动拉起后端并直达主应用中的新会话
-- **一键体检**：终端风只读体检窗，七项检测逐行刷出
+- **一键体检**：终端风只读体检窗，十一项检测逐行刷出，按结果给出条件动作按钮
 - **轻量**：纯 Swift/AppKit 单进程，无 Electron、无守护进程、零系统权限
 
 ## 获取安装
@@ -29,18 +29,18 @@ DSH Launcher 是 [DSH Desktop](https://github.com/Farverge/DSH-MacOS) 的菜单�
 一键命令（安装菜单栏应用，并随装部署 mini-dialog 后端插件）：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Farverge/DSH-Launcher/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/iiiiiei/dsh-launcher/main/install.sh | bash
 ```
 
 一键卸载（对称移除应用与随装插件）：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Farverge/DSH-Launcher/main/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/iiiiiei/dsh-launcher/main/uninstall.sh | bash
 ```
 
-手动方式：到 [Releases](https://github.com/Farverge/DSH-Launcher/releases) 下载 `DSH.Launcher.zip`，解压后把 `DSH Launcher.app` 拖入 `~/Library/Application Support/`。
+手动方式：到 [Releases](https://github.com/iiiiiei/dsh-launcher/releases) 下载 `DSH.Launcher.zip`，解压后把 `DSH Launcher.app` 拖入 `~/Library/Application Support/`。
 
-> 建议与 [DSH Desktop](https://github.com/Farverge/DSH-MacOS) v1.0.0+ 搭配使用；迷你对话框的完整体验依赖主应用 v1.0.x 携带的 dsh-mini-dialog 插件。
+> 建议与 [DSH Desktop](https://github.com/Farverge/DSH-MacOS) v1.0.0+ 搭配使用；迷你对话框由随装部署的 dsh-mini-dialog 插件驱动（v0.2.0 起会话直达跳转前置 [dsh-plugins-norm](https://github.com/iiiiiei/dsh-plugin-norm) ≥ 1.0.1，见 [Wiki · 构建](docs/wiki/Build.md#4-插件装配dsh-mini-dialog)）。
 
 ## 它是如何工作的
 
@@ -67,7 +67,7 @@ Launcher 通过本机回环（`127.0.0.1:3080`）探测 DSH 后端健康并驱�
 | [构建](docs/wiki/Build.md) | 编译、部署、回滚、插件装配 |
 | [更新](docs/wiki/Update.md) | 三层更新关系与流程 |
 | [常见问题](docs/wiki/FAQ.md) | 现象与排查 |
-| [版本历史](docs/wiki/Changelog.md) | v1.0.0 变更全记录 |
+| [版本历史](docs/wiki/Changelog.md) | v1.0.0 变更全记录与后续日期注记 |
 
 ## 友情链接
 

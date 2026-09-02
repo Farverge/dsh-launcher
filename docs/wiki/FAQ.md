@@ -33,6 +33,9 @@ Launcher 会显式激活自己再拉起面板；若系统焦点被占用瞬间�
 **发送时提示 Node 未就绪？**
 后端依赖 Node.js（`/opt/homebrew/bin/node` 或 `/usr/local/bin/node`）。先从 DSH Desktop 正常启动一次后端，之后迷你框可按需代拉。
 
+**发送成功但没自动跳到新会话？**
+mini-dialog 0.2.0 起，会话直达跳转由 dsh-plugins-norm 承载；norm 未部署时 `/api/mini/focus` 返回 503——会话创建与发送不受影响，仅自动跳转降级。用一键体检的「norm 协议」行确认（未部署会标黄），部署 [dsh-plugins-norm](https://github.com/iiiiiei/dsh-plugin-norm) ≥ 1.0.1 后重启后端即恢复（装卸须与 cordis.patch.yml 条目同步，见 [Build](Build.md#4-插件装配dsh-mini-dialog)）。
+
 **展开后打字到很高就滚动了？**
 生长上限≈整屏可视高度（保留顶部呼吸）；到底后输入区内部滚动，发送不受影响。
 
@@ -53,7 +56,7 @@ Launcher 会显式激活自己再拉起面板；若系统焦点被占用瞬间�
 不会。那个开关只控制 Launcher 进程启停；mini-dialog 是后端插件，随 DSH 后端存活。关闭后它处于"加载但空转"状态——回环路由没有调用方，无害。不做硬联动（卸载插件需重启后端、打断会话）是为一个空转状态不值得。要真正移除请用一键卸载脚本。
 
 **如何彻底移除 mini-dialog 插件？**
-运行一键卸载脚本即随 Launcher 一并移除（应用、插件目录、装配条目）；后端重启后生效。只想留插件卸应用：`uninstall.sh --keep-plugin`。
+运行一键卸载脚本即随 Launcher 一并移除（应用、插件目录、装配条目）；后端重启后生效。只想留插件卸应用：`uninstall.sh --keep-plugin`。手动移除务必同步剥离 cordis.patch.yml 里的装配条目——patch 引用缺失包会拒启整个 profile。
 
 ## 卸载与残留
 

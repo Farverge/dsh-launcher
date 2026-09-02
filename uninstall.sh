@@ -2,7 +2,7 @@
 # DSH Launcher 一键卸载脚本
 #
 # 用法：
-#   curl -fsSL https://raw.githubusercontent.com/Farverge/DSH-Launcher/main/uninstall.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/iiiiiei/dsh-launcher/main/uninstall.sh | bash
 #
 # 行为：退出并移除菜单栏应用 + 移除随装的 dsh-mini-dialog 插件及其装配条目。
 # 插件移除在 DSH 后端重启后生效——脚本结束时会给出明确提示。
