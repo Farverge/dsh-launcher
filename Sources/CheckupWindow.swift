@@ -438,8 +438,12 @@ final class CheckupWindowController {
             var code = 0
             var data = Data()
             for attempt in 0..<5 {
-                (data, response) = try await URLSession.shared.data(for: request)
-                code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                if let (chunk, resp) = try? await URLSession.shared.data(for: request) {
+                    data = chunk
+                    code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+                } else {
+                    code = 0
+                }
                 if code == 200 || code == 401 { break }
                 try? await Task.sleep(nanoseconds: 1_200_000_000)
             }
