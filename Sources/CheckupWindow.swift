@@ -431,11 +431,23 @@ final class CheckupWindowController {
             var request = URLRequest(url: url)
             request.timeoutInterval = 3
             request.cachePolicy = .reloadIgnoringLocalCacheData
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-                let code = (response as? HTTPURLResponse)?.statusCode.description ?? "?"
-                return Result(mark: "!", name: "norm 协议 ",
-                              value: "未部署（HTTP \(code)；会话跳转通道降级；部署方法见 wiki）", color: warnColor)
+            // 【后端刚重启的未就绪窗口】norm 插件的路由注册晚于端口监听——此刻探测
+            // 会拿到 401（认证栅栏先于插件路由生效），与"真的没部署"无法区分。
+            // 短间隔重试（最多 5 次、累计 ~6s）后仍非 200/401 才下结论：
+            // 200=已部署；401=认证链在而 caps 路由未注册（真·未部署或加载失败）。
+            var code = 0
+            var data = Data()
+            for attempt in 0..<5 {
+                (data, response) = try await URLSession.shared.data(for: request)
+                code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                if code == 200 || code == 401 { break }
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+            }
+            guard code == 200 else {
+                let text = code == 401
+                    ? "norm 未加载（HTTP 401；会话跳转通道降级；部署方法见 wiki）"
+                    : "异常（HTTP \(code)；部署方法见 wiki）"
+                return Result(mark: "!", name: "norm 协议 ", value: text, color: warnColor)
             }
             guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 return Result(mark: "!", name: "norm 协议 ", value: "caps 报文非 JSON（版本过旧？）", color: warnColor)

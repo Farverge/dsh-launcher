@@ -118,7 +118,7 @@ const fail = (msg) => {
   if (!existsSync(join(root, "lib/client.js"))) pass("lib/client.js 已退役");
   else fail("lib/client.js 仍存在（应已退役）");
   const pkg = JSON.parse((await (await import("node:fs/promises")).readFile(join(root, "package.json"), "utf8")));
-  if (pkg.version === "0.2.0") pass("package.json version = 0.2.0");
+  if (pkg.version === "0.2.1") pass("package.json version = 0.2.1");
   else fail(`package.json version 异常：${pkg.version}`);
   if (!pkg.dsh) pass("package.json 无 dsh.client 声明（client 脸退役）");
   else fail("package.json 仍带 dsh.client 声明");
