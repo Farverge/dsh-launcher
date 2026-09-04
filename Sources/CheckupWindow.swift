@@ -487,11 +487,25 @@ final class CheckupWindowController {
     }
 
     /// mini-dialog 版本：读 package.json。≥0.2.0 focus 走 norm；旧版自带 WS 通道建议升级。
+    /// 部署位以内外层区分：内层 web/node_modules 是设计部署位；只在旧外层
+    /// profiles/node_modules 探到包 = 双树异常（壳旧版铺错位），单独警示而非当版本报。
     private static func checkMiniDialog() async -> Result {
-        let pkgPath = NSHomeDirectory() + "/.dsh/profiles/node_modules/dsh-mini-dialog/package.json"
-        guard let data = FileManager.default.contents(atPath: pkgPath),
-              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let version = obj["version"] as? String else {
+        let innerPkg = NSHomeDirectory() + "/.dsh/profiles/web/node_modules/dsh-mini-dialog/package.json"
+        let outerPkg = NSHomeDirectory() + "/.dsh/profiles/node_modules/dsh-mini-dialog/package.json"
+        // 读部署副本的 version；缺失/损坏返回 nil
+        func versionAt(_ path: String) -> String? {
+            guard let data = FileManager.default.contents(atPath: path),
+                  let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  let version = obj["version"] as? String else { return nil }
+            return version
+        }
+        // 内层缺席而外层在场：报外层陈旧副本的存在，提示迁移而非假装已安装
+        if let outer = versionAt(outerPkg), versionAt(innerPkg) == nil {
+            return Result(mark: "!", name: "mini 对话框",
+                          value: "\(outer) 在外层旧树（imports 有解析到旧模块风险；重跑 launcher 一键安装迁至内层）",
+                          color: warnColor)
+        }
+        guard let version = versionAt(innerPkg) else {
             return Result(mark: "!", name: "mini 对话框", value: "未安装（launcher 一键安装可补）", color: warnColor)
         }
         guard let semver = parseVersion(version) else {
