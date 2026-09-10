@@ -9,6 +9,8 @@ import AppKit
 ///   （稳定通道 200=健康 · alpha 认证链 401+文案=健康）/ 桥接接口 / norm 协议层
 ///   （dsh-plugin-norm caps 路由，免认证）/ profile 工作区装配（alpha.3 白屏坑）/
 ///   mini-dialog 版本 / npx 副本 / 缓存体量
+/// - 报告头「版本方框」：检测流开跑前先盘点前端壳 / 后端 dsh / 已装家族插件的版本
+///   （box-drawing 字符；逐项 fail-soft，取不到的行整行不显示，一项都取不到则整个方框不显示）
 /// - 动作按钮（体检完成后按结果出现，用户点按才执行，绝不在体检过程中自动执行）：
 ///   释放 npm 缓存（`npm cache clean --force`）、打开 npx 目录（Finder）、重新体检
 /// - 安全红线：体检全只读；动作仅限白名单（npm cache clean / NSWorkspace.open），
@@ -175,6 +177,19 @@ final class CheckupWindowController {
         append(line: attributed("── DSH Launcher 体检 ──", color: titleColor))
 
         Task { @MainActor in
+            // 报告头·版本方框：先于检测流取数并渲染（本地只读为主，逐项 fail-soft，
+            // 失败绝不影响后续体检）。方框行同步进 reportLines，复制报告时一并带上。
+            let boxLines = await Self.versionBoxPlainLines()
+            guard generation == self.checkupGeneration else { return }
+            if let boxLines {
+                for (index, text) in boxLines.enumerated() {
+                    // 框线行用标题色、内容行用稍暗的正文灰，保持报告头的层次
+                    let color: NSColor = (index == 0 || index == boxLines.count - 1)
+                        ? self.titleColor : Self.boxBodyColor
+                    self.append(line: self.attributed(text, color: color))
+                }
+                self.reportLines.append(contentsOf: boxLines)
+            }
             var advices: [String] = []
             for await result in Self.checkAll() {
                 guard generation == self.checkupGeneration else { return }
@@ -492,20 +507,14 @@ final class CheckupWindowController {
     private static func checkMiniDialog() async -> Result {
         let innerPkg = NSHomeDirectory() + "/.dsh/profiles/web/node_modules/dsh-mini-dialog/package.json"
         let outerPkg = NSHomeDirectory() + "/.dsh/profiles/node_modules/dsh-mini-dialog/package.json"
-        // 读部署副本的 version；缺失/损坏返回 nil
-        func versionAt(_ path: String) -> String? {
-            guard let data = FileManager.default.contents(atPath: path),
-                  let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-                  let version = obj["version"] as? String else { return nil }
-            return version
-        }
+        // 读部署副本的 version（packageVersion 统一 fail-soft：缺失/损坏返回 nil）
         // 内层缺席而外层在场：报外层陈旧副本的存在，提示迁移而非假装已安装
-        if let outer = versionAt(outerPkg), versionAt(innerPkg) == nil {
+        if let outer = packageVersion(at: outerPkg), packageVersion(at: innerPkg) == nil {
             return Result(mark: "!", name: "mini 对话框",
                           value: "\(outer) 在外层旧树（imports 有解析到旧模块风险；重跑 launcher 一键安装迁至内层）",
                           color: warnColor)
         }
-        guard let version = versionAt(innerPkg) else {
+        guard let version = packageVersion(at: innerPkg) else {
             return Result(mark: "!", name: "mini 对话框", value: "未安装（launcher 一键安装可补）", color: warnColor)
         }
         guard let semver = parseVersion(version) else {
@@ -594,7 +603,133 @@ final class CheckupWindowController {
         return Result(mark: "✓", name: "缓存体量 ", value: "~/.npm 共 \(size)", color: nodeGreen)
     }
 
+    // MARK: - 版本方框（报告头）
+
+    /// 方框里盘点的家族插件目录：只显示真实在位的，未安装的不显示（用户定稿口径）
+    private static let boxPluginNames = [
+        "dsh-theme-sdk", "dsh-plugin-norm", "dsh-mini-dialog", "dsh-l10n-zh", "dsh-theme-grok",
+    ]
+
+    /// 方框内容行的正文灰（比框线的标题色稍暗，保持报告头层次）
+    private static let boxBodyColor = NSColor(white: 0.78, alpha: 1)
+
+    /// 方框字体：与 attributed(_:) 同一套（Menlo 13），标签→版本的空格数按它的像素宽折算
+    private static let boxFont = NSFont(name: "Menlo", size: 13)
+        ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+
+    /// 文本在方框字体下的像素宽。等宽字体遇 CJK 会回退到系统中日韩字体，
+    /// 字宽不是恰好 2 倍 ASCII 格宽，所以对齐要按像素算、不能按"中文算 2 列"算。
+    private static func pixelWidth(_ text: String) -> CGFloat {
+        (text as NSString).size(withAttributes: [.font: boxFont]).width
+    }
+
+    /// 前端（壳）版本：主应用（mainAppURL 候选逻辑同启动器）Info.plist 的
+    /// CFBundleShortVersionString；应用不存在 / plist 缺失 / 字段为空一律 nil（整行不显示）
+    private static func mainAppVersion() -> String? {
+        guard let app = mainAppURL else { return nil }
+        let version = Bundle(url: app)?.infoDictionary?["CFBundleShortVersionString"] as? String
+        return (version?.isEmpty == false) ? version : nil
+    }
+
+    /// 后端 dsh 版本（方框口径）：在线时问桌面桥 status 报文——与体检流水线「桥接接口」
+    /// 同一数据源（方框先于检测流渲染，此处自取一次；回环 GET 只读且短超时）；拿不到时
+    /// 退回扫 npx 缓存副本。都取不到返回 nil（整行不显示）。
+    private static func probeBackendVersion() async -> String? {
+        if let online = await liveBackendVersion() { return online }
+        return npxBackendVersion()
+    }
+
+    /// 在线版本：GET /api/desktop/status（短超时、绕缓存；后端未监听时回环连接立即
+    /// 失败，不会拖慢体检开跑）
+    private static func liveBackendVersion() async -> String? {
+        guard let url = URL(string: "http://127.0.0.1:3080/api/desktop/status") else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 2
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              obj["ok"] as? Bool == true,
+              let version = obj["version"] as? String,
+              !version.isEmpty, version != "?" else { return nil }
+        return version
+    }
+
+    /// 离线版本：扫 ~/.npm/_npx 下装有 @deepseek-ai/dsh 的缓存目录（与「npx 副本」
+    /// 检测同型扫描），取 bin.js 修改时间最新的那份，读其 package.json 的 version
+    private static func npxBackendVersion() -> String? {
+        let npxRoot = NSHomeDirectory() + "/.npm/_npx"
+        guard let entries = try? FileManager.default.contentsOfDirectory(atPath: npxRoot) else { return nil }
+        var latest: (mtime: Date, version: String)? = nil
+        for entry in entries {
+            let pkgDir = npxRoot + "/" + entry + "/node_modules/@deepseek-ai/dsh"
+            guard let version = packageVersion(at: pkgDir + "/package.json") else { continue }
+            let attrs = try? FileManager.default.attributesOfItem(atPath: pkgDir + "/bin.js")
+            let binMtime = (attrs?[.modificationDate] as? Date) ?? .distantPast
+            if latest == nil || binMtime > latest!.mtime { latest = (binMtime, version) }
+        }
+        return latest?.version
+    }
+
+    /// 已安装家族插件版本：扫 profile 内层部署位 ~/.dsh/profiles/web/node_modules/，
+    /// 只列 boxPluginNames 里 package.json 能读出版本的（目录在但清单缺失/损坏的跳过）
+    private static func installedPluginVersions() -> [(name: String, version: String)] {
+        let root = NSHomeDirectory() + "/.dsh/profiles/web/node_modules"
+        var installed: [(name: String, version: String)] = []
+        for name in boxPluginNames {
+            if let version = packageVersion(at: root + "/" + name + "/package.json") {
+                installed.append((name, version))
+            }
+        }
+        return installed
+    }
+
+    /// 组装「版本」方框纯文本（原文进 reportLines 供复制；屏幕渲染另配色）。
+    /// 版本一项都取不到时返回 nil，整个方框不显示。
+    /// 对齐：核心行（前端/后端）与插件行各自对齐值列（定稿示例口径）；间隔空格数按
+    /// Menlo 像素宽折算。右侧不闭合——CJK 回退字体字宽非恰好 2 倍格宽，右边框拼不齐，
+    /// 维持示例的开口样式。
+    private static func versionBoxPlainLines() async -> [String]? {
+        var coreRows: [(label: String, value: String)] = []
+        var pluginRows: [(label: String, value: String)] = []
+        if let shell = mainAppVersion() { coreRows.append(("前端（壳）", shell)) }
+        if let backend = await probeBackendVersion() { coreRows.append(("后端 dsh", backend)) }
+        for plugin in installedPluginVersions() {
+            pluginRows.append(("插件 \(plugin.name)", plugin.version))
+        }
+        if coreRows.isEmpty && pluginRows.isEmpty { return nil }
+
+        let spacePx = pixelWidth(" ")
+        let dashPx = pixelWidth("─")
+        // 值列位置 = 组内最宽标签 + 2 格；各行的间隔空格数按像素差折算（至少 1 格）
+        func paddedRow(label: String, value: String, groupTargetPx: CGFloat) -> String {
+            let valueColumnPx = groupTargetPx + spacePx * 2
+            let pad = max(1, ((valueColumnPx - pixelWidth(label)) / spacePx).rounded())
+            return "│ \(label)\(String(repeating: " ", count: Int(pad)))\(value)"
+        }
+        let coreTargetPx = coreRows.map { pixelWidth($0.label) }.max() ?? 0
+        let pluginTargetPx = pluginRows.map { pixelWidth($0.label) }.max() ?? 0
+        var lines =
+            coreRows.map { paddedRow(label: $0.label, value: $0.value, groupTargetPx: coreTargetPx) }
+            + pluginRows.map { paddedRow(label: $0.label, value: $0.value, groupTargetPx: pluginTargetPx) }
+        // 横线长度随内容走：比最长内容行宽出约 4 格，并保底不至于窄成一条缝
+        let boxPx = max((lines.map { pixelWidth($0) }.max() ?? 0) + spacePx * 4, dashPx * 27)
+        let topDashes = max(((boxPx - pixelWidth("┌─ 版本 ")) / dashPx).rounded(), 4)
+        let bottomDashes = max((boxPx / dashPx).rounded(), 8)
+        lines.insert("┌─ 版本 " + String(repeating: "─", count: Int(topDashes)), at: 0)
+        lines.append("└" + String(repeating: "─", count: Int(bottomDashes)))
+        return lines
+    }
+
     // MARK: 小工具
+
+    /// 读 package.json 顶层 version 字段；文件缺失 / JSON 损坏 / 无版本号一律 nil（fail-soft）
+    private static func packageVersion(at path: String) -> String? {
+        guard let data = FileManager.default.contents(atPath: path),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let version = obj["version"] as? String, !version.isEmpty else { return nil }
+        return version
+    }
 
     private static func firstExecutable(_ paths: [String]) -> String? {
         paths.first { FileManager.default.isExecutableFile(atPath: $0) }

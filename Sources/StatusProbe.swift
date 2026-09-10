@@ -70,13 +70,18 @@ final class StatusProbe {
         let result = await Self.probe(url: url)
         let forceEmitting = forceEmitNext
         forceEmitNext = false
-        let changed = result.state != state || result.detail != detail || forceEmitting
+        let stateChanged = result.state != state
+        let changed = stateChanged || result.detail != detail || forceEmitting
         state = result.state
         detail = result.detail
         if changed {
-            // 进入过渡期加密节奏；回归绿色稳态时同样短暂加密确认一次再回落
-            burstDeadline = Date().addingTimeInterval(60)
             onChange?(state, detail)
+        }
+        // 突发加密只随「状态」突变续期（首探视为状态落定）：healthy 的 tooltip
+        // 内嵌 uptime 秒数，detail 每探必变——若 detail-only 变化也续期，稳态会
+        // 被永久钉在 5s（12 次/分 vs 设计 2 次/分，违背功耗红线）
+        if stateChanged || forceEmitting {
+            burstDeadline = Date().addingTimeInterval(60)
         }
         scheduleNext()
     }

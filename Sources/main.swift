@@ -20,6 +20,11 @@ final class LauncherApp: NSObject, NSApplicationDelegate {
     /// 过渡态闪烁节拍器：仅 transitional 期间运行，其余状态自动停表（功耗红线）
     private var blinkTimer: Timer?
     private var blinkOn = false
+    /// 上次实际渲染到按钮的 (state, detail)。onChange 的 detail 含 uptime 秒数，
+    /// 稳态 healthy 下每次探测都不同——若不去重，image/toolTip 会被无差别重写；
+    /// AppKit 的 image setter 不做同值比较，重赋值即标记状态项重绘（图标闪烁隐患）。
+    private var renderedState: BackendState?
+    private var renderedDetail: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory) // LSUIElement 保险
@@ -76,17 +81,28 @@ final class LauncherApp: NSObject, NSApplicationDelegate {
 
     private func render(state: BackendState, detail: String) {
         guard let button = statusItem?.button else { return }
-        stopBlink()
-        switch state {
-        case .healthy:
-            button.image = StatusIcons.healthy
-        case .transitional:
-            button.image = StatusIcons.transitional(blinkOn: true)
-            startBlink()
-        case .down:
-            button.image = StatusIcons.exclamation
+        // 写入去重：state 未变只刷 toolTip，两者都没变直接返回。
+        // 闪烁动画由 blinkTimer 自行写 image，这里不碰它（否则相位被重置）。
+        let stateChanged = state != renderedState
+        let detailChanged = detail != renderedDetail
+        guard stateChanged || detailChanged else { return }
+        if stateChanged {
+            stopBlink()
+            switch state {
+            case .healthy:
+                button.image = StatusIcons.healthy
+            case .transitional:
+                button.image = StatusIcons.transitional(blinkOn: true)
+                startBlink()
+            case .down:
+                button.image = StatusIcons.exclamation
+            }
         }
-        button.toolTip = detail
+        if detailChanged {
+            button.toolTip = detail
+        }
+        renderedState = state
+        renderedDetail = detail
     }
 
     private func startBlink() {
