@@ -9,12 +9,19 @@ import AppKit
 ///   （稳定通道 200=健康 · alpha 认证链 401+文案=健康）/ 桥接接口 / norm 协议层
 ///   （dsh-plugin-norm caps 路由，免认证）/ profile 工作区装配（alpha.3 白屏坑）/
 ///   mini-dialog 版本 / npx 副本 / 缓存体量
-/// - 报告头「版本方框」：检测流开跑前先盘点前端壳 / 后端 dsh / 已装家族插件的版本
-///   （box-drawing 字符；逐项 fail-soft，取不到的行整行不显示，一项都取不到则整个方框不显示）
+/// - 报告头「版本方框」：检测流开跑前先盘点前端（dsh-macos）/ 后端 dsh / 已装家族插件
+///   的版本（box-drawing 字符；右侧竖线像素级闭合，两列表头「项目/本地版本号」，版本号
+///   右对齐 + `·` 点线导引；逐项 fail-soft，取不到的行整行不显示，一项都取不到则整个方框
+///   不显示）。有独立发布仓的家族插件并发拉 GitHub latest release 做轻量 semver 比对：
+///   落后 → 该行黄色 + 行尾「（可更新）」；无法判定（无 release/超时/失败）→ 正常白灰
+///   不误报。插件运行错误（norm caps 探针失败 / mini-dialog 检查 ✗）在检测流出结论后
+///   回填刷新为红色行
 /// - 动作按钮（体检完成后按结果出现，用户点按才执行，绝不在体检过程中自动执行）：
-///   释放 npm 缓存（`npm cache clean --force`）、打开 npx 目录（Finder）、重新体检
-/// - 安全红线：体检全只读；动作仅限白名单（npm cache clean / NSWorkspace.open），
-///   绝不自动删目录、绝不杀任何既有进程（超时强杀仅针对我们自起的短命命令进程）
+///   释放 npm 缓存（`npm cache clean --force`）、打开 npx 目录（Finder）、一键更新插件
+///   （逐个执行放行的安装命令，完成后自动重新体检）、重新体检
+/// - 安全红线：体检全只读；动作仅限白名单（npm cache clean / NSWorkspace.open /
+///   `dsh plugin --profile web add https://github.com/iiiiiei/dsh-plugin-norm` 仅此一条
+///   命令形态），绝不自动删目录、绝不杀任何既有进程（超时强杀仅针对我们自起的短命命令进程）
 final class CheckupWindowController {
     static let shared = CheckupWindowController()
 
@@ -23,6 +30,7 @@ final class CheckupWindowController {
     private var rerunButton: NSButton?
     private var cleanCacheButton: NSButton?
     private var openNpxButton: NSButton?
+    private var updatePluginsButton: NSButton?
     /// 体检代次：点「重新体检」时自增；上一轮流线回来发现代次不符即静默退出，
     /// 防止两轮流交错刷屏
     private var checkupGeneration = 0
@@ -37,6 +45,11 @@ final class CheckupWindowController {
     /// 汇总报告（复制给 agent 时可直接粘贴）
     private var reportLines: [String] = []
 
+    /// 版本方框可回填行的屏幕区间（按行身份索引；回填改色一次后即清除）
+    private var boxRowRanges: [BoxRowKind: NSRange] = [:]
+    /// 本轮体检判定「落后」的插件名（驱动「一键更新插件」按钮的出现）
+    private var outdatedPluginNames: [String] = []
+
     func show() {
         if window == nil { buildWindow() }
         window?.makeKeyAndOrderFront(nil)
@@ -47,9 +60,9 @@ final class CheckupWindowController {
     // MARK: - 突体与输出
 
     private func buildWindow() {
-        // 底部按钮行最多 5 枚（2 动作 + 重新体检/复制报告/关闭），窗口加宽到 640 保证不挤压
+        // 底部按钮行最多 6 枚（3 动作 + 重新体检/复制报告/关闭），窗口加宽到 768 保证不挤压
         let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 400),
+            contentRect: NSRect(x: 0, y: 0, width: 768, height: 400),
             styleMask: [.titled, .closable, .resizable],   // 真机反馈：字号加大＋窗口可拉伸
             backing: .buffered,
             defer: false
@@ -61,13 +74,13 @@ final class CheckupWindowController {
         // 但动作按钮会把工作交接给 Finder/终端，置顶恰好挡住交接目标。
         // makeKeyAndOrderFront 仍保证打开时到最前，此后遵循常规窗口层级。
         win.isReleasedWhenClosed = false
-        win.minSize = NSSize(width: 620, height: 320)
+        win.minSize = NSSize(width: 748, height: 320)
 
-        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 624, height: 350))
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 752, height: 350))
         textView.isEditable = false
         textView.drawsBackground = false
         textView.textContainerInset = NSSize(width: 8, height: 8)
-        let scroll = NSScrollView(frame: NSRect(x: 6, y: 40, width: 628, height: 352))
+        let scroll = NSScrollView(frame: NSRect(x: 6, y: 40, width: 756, height: 352))
         scroll.hasVerticalScroller = true
         scroll.documentView = textView
         scroll.drawsBackground = false
@@ -76,16 +89,16 @@ final class CheckupWindowController {
         // 底部按钮行（从右往左）：[关闭][复制报告][重新体检] ← 动作按钮区（动态） ← 弹性空隙
         let closeButton = NSButton(title: "关闭", target: self, action: #selector(closeWindow))
         closeButton.bezelStyle = .rounded
-        closeButton.frame = NSRect(x: 530, y: 8, width: 104, height: 26)
+        closeButton.frame = NSRect(x: 658, y: 8, width: 104, height: 26)
         closeButton.autoresizingMask = [.minXMargin]
         let copyButton = NSButton(title: "复制报告", target: self, action: #selector(copyReport))
         copyButton.bezelStyle = .rounded
-        copyButton.frame = NSRect(x: 418, y: 8, width: 104, height: 26)
+        copyButton.frame = NSRect(x: 546, y: 8, width: 104, height: 26)
         copyButton.autoresizingMask = [.minXMargin]
         let rerunButton = NSButton(title: "重新体检", target: self, action: #selector(rerunCheckup))
         rerunButton.bezelStyle = .rounded
         rerunButton.toolTip = "清空报告并重新体检"
-        rerunButton.frame = NSRect(x: 306, y: 8, width: 104, height: 26)
+        rerunButton.frame = NSRect(x: 434, y: 8, width: 104, height: 26)
         rerunButton.autoresizingMask = [.minXMargin]
         let cleanCacheButton = NSButton(title: "释放 npm 缓存", target: self, action: #selector(cleanNpmCache))
         cleanCacheButton.bezelStyle = .rounded
@@ -99,14 +112,21 @@ final class CheckupWindowController {
         openNpxButton.frame = NSRect(x: 48, y: 8, width: 118, height: 26)
         openNpxButton.autoresizingMask = [.minXMargin]
         openNpxButton.isHidden = true      // 体检完成后按结果出现
+        let updatePluginsButton = NSButton(title: "一键更新插件", target: self, action: #selector(updateOutdatedPlugins))
+        updatePluginsButton.bezelStyle = .rounded
+        updatePluginsButton.toolTip = "对检测到落后的家族插件逐个执行放行的安装命令（dsh plugin --profile web add <GitHub 仓库>），完成后自动重新体检"
+        updatePluginsButton.frame = NSRect(x: 44, y: 8, width: 124, height: 26)
+        updatePluginsButton.autoresizingMask = [.minXMargin]
+        updatePluginsButton.isHidden = true   // 版本方框检出「落后且有放行安装命令」的插件时出现
 
-        let content = NSView(frame: NSRect(x: 0, y: 0, width: 640, height: 400))
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: 768, height: 400))
         content.addSubview(scroll)
         content.addSubview(closeButton)
         content.addSubview(copyButton)
         content.addSubview(rerunButton)
         content.addSubview(cleanCacheButton)
         content.addSubview(openNpxButton)
+        content.addSubview(updatePluginsButton)
         win.contentView = content
 
         self.window = win
@@ -114,6 +134,7 @@ final class CheckupWindowController {
         self.rerunButton = rerunButton
         self.cleanCacheButton = cleanCacheButton
         self.openNpxButton = openNpxButton
+        self.updatePluginsButton = updatePluginsButton
     }
 
     private func append(line: NSAttributedString) {
@@ -168,10 +189,14 @@ final class CheckupWindowController {
         checkupGeneration += 1
         let generation = checkupGeneration
         reportLines.removeAll()
+        boxRowRanges.removeAll()
+        outdatedPluginNames = []
         cleanCacheButton?.isHidden = true
         openNpxButton?.isHidden = true
+        updatePluginsButton?.isHidden = true
         cleanCacheButton?.isEnabled = true
         openNpxButton?.isEnabled = true
+        updatePluginsButton?.isEnabled = true
         guard let textView else { return }
         textView.string = ""
         append(line: attributed("── DSH Launcher 体检 ──", color: titleColor))
@@ -179,16 +204,13 @@ final class CheckupWindowController {
         Task { @MainActor in
             // 报告头·版本方框：先于检测流取数并渲染（本地只读为主，逐项 fail-soft，
             // 失败绝不影响后续体检）。方框行同步进 reportLines，复制报告时一并带上。
-            let boxLines = await Self.versionBoxPlainLines()
+            // 落后检测（GitHub，2s 超时）在方框渲染时已出结论（黄色+（可更新））；
+            // 插件运行错误等检测流出结论后回填刷新为红色（markBoxRowFailed）。
+            let box = await Self.buildVersionBox()
             guard generation == self.checkupGeneration else { return }
-            if let boxLines {
-                for (index, text) in boxLines.enumerated() {
-                    // 框线行用标题色、内容行用稍暗的正文灰，保持报告头的层次
-                    let color: NSColor = (index == 0 || index == boxLines.count - 1)
-                        ? self.titleColor : Self.boxBodyColor
-                    self.append(line: self.attributed(text, color: color))
-                }
-                self.reportLines.append(contentsOf: boxLines)
+            if let box {
+                self.appendVersionBox(box)
+                self.outdatedPluginNames = box.outdatedNames
             }
             var advices: [String] = []
             for await result in Self.checkAll() {
@@ -196,6 +218,7 @@ final class CheckupWindowController {
                 self.append(line: self.attributed(
                     "[\(result.mark)] \(result.name)：\(result.value)", color: result.color))
                 self.reportLines.append("[\(result.mark)] \(result.name): \(result.value)")
+                if let kind = Self.boxErrorKind(for: result) { self.markBoxRowFailed(kind) }
                 if let advice = result.advice { advices.append(advice) }
             }
             guard generation == self.checkupGeneration else { return }
@@ -610,8 +633,44 @@ final class CheckupWindowController {
         "dsh-theme-sdk", "dsh-plugin-norm", "dsh-mini-dialog", "dsh-l10n-zh", "dsh-theme-grok",
     ]
 
+    /// 有独立 GitHub 发布仓的家族插件（落后检测只查这些；其余无发布仓，不检不上色）。
+    /// 主题仓没有 release 时 latest 接口 404 → 视为无法判定，不上色不误报
+    private static let pluginReleaseRepos = [
+        "dsh-plugin-norm": "iiiiiei/dsh-plugin-norm",
+        "dsh-theme-grok": "iiiiiei/dsh-theme-grokbot",
+    ]
+
+    /// 方框行身份（检测流出结论后按它回填定位屏幕区间）
+    private enum BoxRowKind: Hashable {
+        case shell
+        case backend
+        case plugin(String)
+    }
+
+    /// 方框一行：项目名左对齐、版本号（含后缀）右对齐到版本列右缘；
+    /// 落后行黄色、运行错误行由检测流结论回填红色
+    private struct BoxRow {
+        let kind: BoxRowKind
+        let label: String
+        let version: String
+        var suffix: String
+        var color: NSColor
+    }
+
+    /// 方框产物：屏幕渲染行（右对齐制表位段落样式，右边框像素级闭合）+ 纯文本行
+    /// （进 reportLines 供复制）+ 可回填行身份 + 落后插件清单
+    private struct VersionBox {
+        var plainLines: [String]
+        var screenLines: [NSAttributedString]
+        var lineKinds: [BoxRowKind?]
+        var outdatedNames: [String]
+    }
+
     /// 方框内容行的正文灰（比框线的标题色稍暗，保持报告头层次）
     private static let boxBodyColor = NSColor(white: 0.78, alpha: 1)
+
+    /// 框线行颜色（与实例 titleColor 同值；渲染在 static 上下文，单列一份）
+    private static let boxFrameColor = NSColor(white: 0.85, alpha: 1)
 
     /// 方框字体：与 attributed(_:) 同一套（Menlo 13），标签→版本的空格数按它的像素宽折算
     private static let boxFont = NSFont(name: "Menlo", size: 13)
@@ -623,7 +682,7 @@ final class CheckupWindowController {
         (text as NSString).size(withAttributes: [.font: boxFont]).width
     }
 
-    /// 前端（壳）版本：主应用（mainAppURL 候选逻辑同启动器）Info.plist 的
+    /// 前端（dsh-macos）版本：主应用（mainAppURL 候选逻辑同启动器）Info.plist 的
     /// CFBundleShortVersionString；应用不存在 / plist 缺失 / 字段为空一律 nil（整行不显示）
     private static func mainAppVersion() -> String? {
         guard let app = mainAppURL else { return nil }
@@ -684,41 +743,254 @@ final class CheckupWindowController {
         return installed
     }
 
-    /// 组装「版本」方框纯文本（原文进 reportLines 供复制；屏幕渲染另配色）。
-    /// 版本一项都取不到时返回 nil，整个方框不显示。
-    /// 对齐：核心行（前端/后端）与插件行各自对齐值列（定稿示例口径）；间隔空格数按
-    /// Menlo 像素宽折算。右侧不闭合——CJK 回退字体字宽非恰好 2 倍格宽，右边框拼不齐，
-    /// 维持示例的开口样式。
-    private static func versionBoxPlainLines() async -> [String]? {
-        var coreRows: [(label: String, value: String)] = []
-        var pluginRows: [(label: String, value: String)] = []
-        if let shell = mainAppVersion() { coreRows.append(("前端（壳）", shell)) }
-        if let backend = await probeBackendVersion() { coreRows.append(("后端 dsh", backend)) }
-        for plugin in installedPluginVersions() {
-            pluginRows.append(("插件 \(plugin.name)", plugin.version))
+    /// 取数并组框：本地版本逐项 fail-soft（取不到的行整行不显示，一项都取不到则整个
+    /// 方框不显示）；落后检测并发拉 GitHub（单项 2s 超时），任何失败都视为无法判定
+    private static func buildVersionBox() async -> VersionBox? {
+        var rows: [BoxRow] = []
+        if let shell = mainAppVersion() {
+            rows.append(BoxRow(kind: .shell, label: "前端（dsh-macos）", version: shell,
+                               suffix: "", color: boxBodyColor))
         }
-        if coreRows.isEmpty && pluginRows.isEmpty { return nil }
+        if let backend = await probeBackendVersion() {
+            rows.append(BoxRow(kind: .backend, label: "后端 dsh", version: backend,
+                               suffix: "", color: boxBodyColor))
+        }
+        var pluginRows = installedPluginVersions().map {
+            BoxRow(kind: .plugin($0.name), label: "插件 \($0.name)", version: $0.version,
+                   suffix: "", color: boxBodyColor)
+        }
+        var outdatedNames: [String] = []
+        await withTaskGroup(of: (String, String?).self) { group in
+            for row in pluginRows {
+                guard case .plugin(let name) = row.kind,
+                      let repo = pluginReleaseRepos[name] else { continue }
+                group.addTask { () -> (String, String?) in
+                    (name, await Self.latestReleaseTag(repo: repo))
+                }
+            }
+            for await (name, tag) in group {
+                // 仅 remote 严格比 local 新才判落后；无 release/超时/解析失败不上色不误报
+                guard let tag,
+                      let index = pluginRows.firstIndex(where: {
+                          if case .plugin(let n) = $0.kind { return n == name }
+                          return false
+                      }),
+                      let order = compareVersions(pluginRows[index].version, tag),
+                      order == .orderedAscending else { continue }
+                pluginRows[index].suffix = "（可更新）"
+                pluginRows[index].color = warnColor
+                outdatedNames.append(name)
+            }
+        }
+        rows.append(contentsOf: pluginRows)
+        guard !rows.isEmpty else { return nil }
+        return renderVersionBox(rows: rows, outdatedNames: outdatedNames)
+    }
 
-        let spacePx = pixelWidth(" ")
-        let dashPx = pixelWidth("─")
-        // 值列位置 = 组内最宽标签 + 2 格；各行的间隔空格数按像素差折算（至少 1 格）
-        func paddedRow(label: String, value: String, groupTargetPx: CGFloat) -> String {
-            let valueColumnPx = groupTargetPx + spacePx * 2
-            let pad = max(1, ((valueColumnPx - pixelWidth(label)) / spacePx).rounded())
-            return "│ \(label)\(String(repeating: " ", count: Int(pad)))\(value)"
+    /// 布局（全部按 Menlo 13 像素宽折算；CJK 回退字体按实测像素，不按「中文=2 格」估算）：
+    /// - vX = 版本列右缘 = max(「│ 」+项目名, 表头两段) + 3 格点线保底 + 最宽版本号
+    /// - borderX = 右边框右缘 = vX + 3 格（值列与边框间留 2 格内衬，表头行尾留「 ─」）
+    /// - 屏幕行用「右对齐制表位」把版本号 / 右边框钉死在 vX / borderX——`·` 点线按像素
+    ///   铺满中段，CJK 行不足一格的余数交给制表位吸收，右边框得以像素级闭合
+    /// - 复制报告的纯文本行无制表位，用空格按像素折算近似对齐
+    private static func renderVersionBox(rows: [BoxRow], outdatedNames: [String]) -> VersionBox {
+        let cell = pixelWidth(" ")
+        let dashCell = pixelWidth("─")
+        let dotCell = pixelWidth("·")
+        let prefix = "│ "
+        let prefixPx = pixelWidth(prefix)
+        let headerLeftPx = pixelWidth("┌─ 项目 ")
+        let headerRightPx = pixelWidth("本地版本号")
+        let valueColPx = rows.map { pixelWidth($0.version + $0.suffix) }.max() ?? 0
+        let vX = max(
+            rows.map { prefixPx + pixelWidth($0.label) }.max() ?? 0,
+            headerLeftPx + headerRightPx + dashCell * 6
+        ) + cell * 3 + valueColPx
+        let borderX = vX + cell * 3
+
+        func makeStyle(stops: [CGFloat]) -> NSParagraphStyle {
+            let style = NSMutableParagraphStyle()
+            style.tabStops = stops.map {
+                NSTextTab(textAlignment: .right, location: $0, options: [:])
+            }
+            return style
         }
-        let coreTargetPx = coreRows.map { pixelWidth($0.label) }.max() ?? 0
-        let pluginTargetPx = pluginRows.map { pixelWidth($0.label) }.max() ?? 0
-        var lines =
-            coreRows.map { paddedRow(label: $0.label, value: $0.value, groupTargetPx: coreTargetPx) }
-            + pluginRows.map { paddedRow(label: $0.label, value: $0.value, groupTargetPx: pluginTargetPx) }
-        // 横线长度随内容走：比最长内容行宽出约 4 格，并保底不至于窄成一条缝
-        let boxPx = max((lines.map { pixelWidth($0) }.max() ?? 0) + spacePx * 4, dashPx * 27)
-        let topDashes = max(((boxPx - pixelWidth("┌─ 版本 ")) / dashPx).rounded(), 4)
-        let bottomDashes = max((boxPx / dashPx).rounded(), 8)
-        lines.insert("┌─ 版本 " + String(repeating: "─", count: Int(topDashes)), at: 0)
-        lines.append("└" + String(repeating: "─", count: Int(bottomDashes)))
-        return lines
+        func boxLine(_ text: String, color: NSColor, style: NSParagraphStyle) -> NSAttributedString {
+            NSAttributedString(string: text, attributes: [
+                .font: boxFont, .foregroundColor: color, .paragraphStyle: style,
+            ])
+        }
+        // 值列之后到右边框（字符起点前）的空格数
+        func padCount(fromPx px: CGFloat) -> Int {
+            max(1, Int(((borderX - cell - px) / cell).rounded()))
+        }
+        // 内容行引导点数：铺到本行版本号起点前至少 1 格，末尾余数交给制表位
+        func dotCount(labelPx: CGFloat, valuePx: CGFloat) -> Int {
+            let avail = vX - valuePx - prefixPx - labelPx
+            return max(2, Int((avail / dotCell).rounded(.down)) - 1)
+        }
+
+        var plainLines: [String] = []
+        var screenLines: [NSAttributedString] = []
+        var lineKinds: [BoxRowKind?] = []
+
+        // 表头（两列）：项目 = 左列头；本地版本号 = 右列头（右对齐到版本列右缘）
+        let headerDashes = max(2, Int(((vX - headerRightPx - headerLeftPx) / dashCell).rounded(.down)))
+        let headerGap = max(1, Int(
+            ((vX - headerRightPx - headerLeftPx - CGFloat(headerDashes) * dashCell) / cell).rounded()))
+        screenLines.append(boxLine(
+            "┌─ 项目 " + String(repeating: "─", count: headerDashes) + "\t本地版本号\t ─┐",
+            color: boxFrameColor, style: makeStyle(stops: [vX, borderX])))
+        plainLines.append(
+            "┌─ 项目 " + String(repeating: "─", count: headerDashes)
+            + String(repeating: " ", count: headerGap) + "本地版本号 ─┐")
+        lineKinds.append(nil)
+
+        // 内容行：项目名左对齐 · 点线导引 · 版本号右对齐
+        for row in rows {
+            let value = row.version + row.suffix
+            let valuePx = pixelWidth(value)
+            let labelPx = pixelWidth(row.label)
+            let dots = dotCount(labelPx: labelPx, valuePx: valuePx)
+            let gap = max(1, Int(
+                ((vX - valuePx - prefixPx - labelPx - CGFloat(dots) * dotCell) / cell).rounded()))
+            screenLines.append(boxLine(
+                prefix + row.label + String(repeating: "·", count: dots)
+                    + "\t" + value + "\t│",
+                color: row.color, style: makeStyle(stops: [vX, borderX])))
+            let trailPx = prefixPx + labelPx + CGFloat(dots) * dotCell
+                + CGFloat(gap) * cell + valuePx
+            plainLines.append(
+                prefix + row.label + String(repeating: "·", count: dots)
+                + String(repeating: " ", count: gap) + value
+                + String(repeating: " ", count: padCount(fromPx: trailPx)) + "│")
+            lineKinds.append(row.kind)
+        }
+
+        // 底框
+        let bottomDashes = max(4, Int(((borderX - cell - pixelWidth("└")) / dashCell).rounded(.down)))
+        screenLines.append(boxLine(
+            "└" + String(repeating: "─", count: bottomDashes) + "\t┘",
+            color: boxFrameColor, style: makeStyle(stops: [borderX])))
+        let bottomTrailPx = pixelWidth("└") + CGFloat(bottomDashes) * dashCell
+        plainLines.append(
+            "└" + String(repeating: "─", count: bottomDashes)
+            + String(repeating: " ", count: padCount(fromPx: bottomTrailPx)) + "┘")
+        lineKinds.append(nil)
+
+        return VersionBox(plainLines: plainLines, screenLines: screenLines,
+                          lineKinds: lineKinds, outdatedNames: outdatedNames)
+    }
+
+    /// 方框渲染进文本视图：屏幕行逐行追加；可回填行记录屏幕区间，供检测流出结论后改色；
+    /// 纯文本行同步进 reportLines，复制报告时一并带上
+    private func appendVersionBox(_ box: VersionBox) {
+        for (index, line) in box.screenLines.enumerated() {
+            let base = textView.map { ($0.string as NSString).length } ?? 0
+            append(line: line)
+            if let kind = box.lineKinds[index] {
+                // append 在非空文本前会先补一个换行符，行起点相应 +1
+                boxRowRanges[kind] = NSRange(
+                    location: base == 0 ? 0 : base + 1,
+                    length: (line.string as NSString).length)
+            }
+        }
+        reportLines.append(contentsOf: box.plainLines)
+    }
+
+    /// 回填刷新：方框先渲染、检测流后出结论——norm caps 探针失败 / mini-dialog 检查 ✗
+    /// 的红色结论晚于方框渲染。用 addAttribute 原地改色：不动字符、不改长度，方框其余行
+    /// 与后续文本位置不受影响；每行只刷一次（用后即清）
+    private func markBoxRowFailed(_ kind: BoxRowKind) {
+        guard let range = boxRowRanges.removeValue(forKey: kind) else { return }
+        textView?.textStorage?.addAttribute(.foregroundColor, value: Self.nodeRed, range: range)
+    }
+
+    /// 检测流结论 → 方框行错误映射（nil = 不回填）：
+    /// - norm 协议：caps 探针失败 = ✗，或 ！且非「降级:」清单告警（即未加载/异常/报文
+    ///   异常/未部署）；仅降级清单属功能告警，不算运行错误
+    /// - mini 对话框：检查 ✗ 时同理
+    /// - 后端未运行时的占位跳过行不代表插件故障，不回填（fail-soft 不误报）
+    private static func boxErrorKind(for result: Result) -> BoxRowKind? {
+        guard !result.value.contains("后端未运行") else { return nil }
+        if result.name == "norm 协议 " {
+            if result.mark == "✗" { return .plugin("dsh-plugin-norm") }
+            if result.mark == "!" && !result.value.contains("降级:") { return .plugin("dsh-plugin-norm") }
+            return nil
+        }
+        if result.name == "mini 对话框", result.mark == "✗" { return .plugin("dsh-mini-dialog") }
+        return nil
+    }
+
+    // MARK: 落后检测（GitHub latest release · 轻量 semver）
+
+    /// 拉 repo 最新 release tag（只读 GET，2s 超时）；任何失败（断网/限流/404=无
+    /// release/解析不出 tag_name）一律 nil = 无法判定
+    private static func latestReleaseTag(repo: String) async -> String? {
+        guard let url = URL(string: "https://api.github.com/repos/\(repo)/releases/latest") else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 2
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("DSH-Launcher-Checkup", forHTTPHeaderField: "User-Agent")
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let tag = obj["tag_name"] as? String, !tag.isEmpty else { return nil }
+        return tag
+    }
+
+    /// 轻量 semver 比较（主/次/补丁 + 预发布段；构建元数据忽略）：返回 local 相对 remote
+    /// 的次序；任一侧解析不出版本 → nil（视为无法判定，不上色）
+    private static func compareVersions(_ local: String, _ remote: String) -> ComparisonResult? {
+        guard let lhs = parseSemver(local), let rhs = parseSemver(remote) else { return nil }
+        if lhs.core != rhs.core {
+            return lhs.core < rhs.core ? .orderedAscending : .orderedDescending
+        }
+        // 核心号相同：正式版 > 预发布；两侧都预发布则逐段比（数字段按数值，数字段 <
+        // 字符串段，字符串段按字典序；段少者小，如 1.0.0-alpha < 1.0.0-alpha.1）
+        if lhs.prerelease == nil && rhs.prerelease == nil { return .orderedSame }
+        if lhs.prerelease == nil { return .orderedDescending }
+        if rhs.prerelease == nil { return .orderedAscending }
+        guard let a = lhs.prerelease, let b = rhs.prerelease else { return nil }
+        let aIds = a.split(separator: ".").map(String.init)
+        let bIds = b.split(separator: ".").map(String.init)
+        for i in 0..<max(aIds.count, bIds.count) {
+            let x = i < aIds.count ? aIds[i] : nil
+            let y = i < bIds.count ? bIds[i] : nil
+            if x == nil, y == nil { continue }
+            if x == nil { return .orderedAscending }
+            if y == nil { return .orderedDescending }
+            guard let xv = x, let yv = y else { continue }
+            if let xi = Int(xv), let yi = Int(yv), xi != yi {
+                return xi < yi ? .orderedAscending : .orderedDescending
+            }
+            if Int(xv) != nil { return .orderedAscending }
+            if Int(yv) != nil { return .orderedDescending }
+            if xv != yv { return xv < yv ? .orderedAscending : .orderedDescending }
+        }
+        return .orderedSame
+    }
+
+    private struct Semver {
+        var core: (Int, Int, Int)
+        var prerelease: String?
+    }
+
+    /// "v1.2.3" / "1.2.3-beta.1+exp" / "0.2.0" → Semver；解析不出主/次版本 → nil。
+    /// 数字核心段复用 parseVersion；预发布段取首个「-」之后（构建元数据「+」截断）
+    private static func parseSemver(_ text: String) -> Semver? {
+        var s = text.trimmingCharacters(in: .whitespaces)
+        if s.first == "v" || s.first == "V" { s = String(s.dropFirst()) }
+        if let plus = s.firstIndex(of: "+") { s = String(s[..<plus]) }
+        if let dash = s.firstIndex(of: "-") {
+            let core = parseVersion(String(s[..<dash]))
+            let prerelease = String(s[s.index(after: dash)...])
+            guard let core, !prerelease.isEmpty else { return nil }
+            return Semver(core: core, prerelease: prerelease)
+        }
+        guard let core = parseVersion(s) else { return nil }
+        return Semver(core: core, prerelease: nil)
     }
 
     // MARK: 小工具
@@ -781,21 +1053,38 @@ final class CheckupWindowController {
     private static let warnColor = NSColor(red: 0xFF / 255.0, green: 0xC1 / 255.0, blue: 0x07 / 255.0, alpha: 1)
     private static let nodeRed = NSColor(red: 0xE5 / 255.0, green: 0x53 / 255.0, blue: 0x5A / 255.0, alpha: 1)
 
-    // MARK: - 动作按钮（用户显式点按才执行；白名单：npm cache clean / NSWorkspace.open）
+    // MARK: - 动作按钮（用户显式点按才执行；白名单：npm cache clean / NSWorkspace.open
+    // / dsh plugin --profile web add https://github.com/iiiiiei/dsh-plugin-norm）
+
+    /// 放行的安装命令形态（唯一）：dsh-plugin-norm 的 profile add。其余家族插件无独立
+    /// 安装来源，不做按钮、不放行命令
+    private static let pluginInstallCommands: [String: [String]] = [
+        "dsh-plugin-norm": ["plugin", "--profile", "web", "add",
+                            "https://github.com/iiiiiei/dsh-plugin-norm"],
+    ]
+
+    /// dsh 命令探测（从简）：只认 /opt/homebrew/bin/dsh；不在则跳过并写日志
+    private static let dshBinaryPath = "/opt/homebrew/bin/dsh"
 
     /// 触发条件矩阵：
     /// - [释放 npm 缓存]：缓存体量建议（含 `npm cache clean`）或 npx 多副本建议（含
     ///   「多副本无害」，其文案同样指向该按钮）出现时
     /// - [打开 npx 目录]：npx 多副本建议出现时
+    /// - [一键更新插件]：版本方框检出「落后且有放行安装命令」的插件（dsh-plugin-norm）时
     private func refreshActionButtons(advices: [String]) {
         let wantsCleanCache = advices.contains {
             $0.contains("npm cache clean") || $0.contains("多副本无害")
         }
         let wantsOpenNpx = advices.contains { $0.contains("多副本无害") }
+        let wantsUpdatePlugins = outdatedPluginNames.contains {
+            Self.pluginInstallCommands[$0] != nil
+        }
         cleanCacheButton?.isHidden = !wantsCleanCache
         openNpxButton?.isHidden = !wantsOpenNpx
+        updatePluginsButton?.isHidden = !wantsUpdatePlugins
         cleanCacheButton?.isEnabled = true
         openNpxButton?.isEnabled = true
+        updatePluginsButton?.isEnabled = true
         relayoutActionButtons()
     }
 
@@ -803,7 +1092,8 @@ final class CheckupWindowController {
     private func relayoutActionButtons() {
         guard let rerunButton else { return }
         var left = rerunButton.frame.minX - 8
-        for button in [cleanCacheButton, openNpxButton].compactMap({ $0 }) where !button.isHidden {
+        for button in [updatePluginsButton, cleanCacheButton, openNpxButton].compactMap({ $0 })
+        where !button.isHidden {
             let x = left - button.frame.width
             button.frame.origin.x = x
             left = x - 8
@@ -854,5 +1144,43 @@ final class CheckupWindowController {
         NSWorkspace.shared.open(URL(fileURLWithPath: path))
         appendActionLine("[✓] 动作：已在 Finder 打开 npx 目录（可手动清点/删除非活跃副本；删前确认后端已停）",
                          color: passColor)
+    }
+
+    /// 一键更新插件：逐个对落后插件执行放行的安装命令（当前仅 dsh-plugin-norm 一种形态；
+    /// 其余落后插件无放行命令，写日志跳过）。全部执行完自动重跑一次体检，
+    /// 体检会按最新状态重排方框颜色与按钮
+    @objc private func updateOutdatedPlugins() {
+        guard let button = updatePluginsButton, button.isEnabled else { return }
+        button.isEnabled = false
+        let targets = outdatedPluginNames.filter { Self.pluginInstallCommands[$0] != nil }
+        let skipped = outdatedPluginNames.filter { Self.pluginInstallCommands[$0] == nil }
+        guard !targets.isEmpty else { return }
+        appendActionLine("[…] 动作：正在更新落后插件（\(targets.joined(separator: "、"))）…", color: titleColor)
+        Task { @MainActor in
+            guard FileManager.default.isExecutableFile(atPath: Self.dshBinaryPath) else {
+                self.appendActionLine(
+                    "[!] 动作：未找到 dsh 命令（\(Self.dshBinaryPath) 不存在；已跳过插件更新）",
+                    color: self.warnColor)
+                button.isHidden = true
+                return
+            }
+            if !skipped.isEmpty {
+                self.appendActionLine("[!] 跳过 \(skipped.joined(separator: "、"))（无放行的安装命令形态）",
+                                      color: self.warnColor)
+            }
+            for name in targets {
+                guard let args = Self.pluginInstallCommands[name] else { continue }
+                self.appendActionLine("[…] \(name)：dsh \(args.joined(separator: " "))", color: self.titleColor)
+                let outcome = await Self.runProcess(Self.dshBinaryPath, args, timeout: 300)
+                if outcome.ok {
+                    self.appendActionLine("[✓] \(name)：安装命令执行完成", color: self.passColor)
+                } else {
+                    let reason = outcome.ran ? (outcome.text ?? "退出码非 0") : (outcome.text ?? "无法启动进程")
+                    self.appendActionLine("[!] \(name)：安装命令失败（\(reason)）", color: self.warnColor)
+                }
+            }
+            // 执行后自动重跑一次体检
+            self.runCheckup()
+        }
     }
 }
