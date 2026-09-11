@@ -26,7 +26,7 @@ Launcher、主应用、DSH 后端三者的更新关系与准确流程。
 - 语义化版本比较：`v1.0.10 > v1.0.9`、预发布（`-rc`/`-beta`）视为低于正式版
 - 发现新版 → 确认窗（官方更新说明 + 备份策略）→ 确认后自动执行：
   1. 下载 `DSH.Launcher.zip` → 解包校验（.app 结构 / 可执行文件 / Info.plist 版本与 Release 一致）
-  2. **先同步 mini-dialog 插件**到 `~/.dsh/profiles/node_modules/`（此步失败自动恢复原插件并整体中止，不连坐主程序）；幂等维护 `cordis.patch.yml` 装配条目
+  2. **先同步 mini-dialog 插件**到 `~/.dsh/profiles/web/node_modules/`（内层官方依赖树；此步失败自动恢复原插件并整体中止，不连坐主程序）；幂等维护 `cordis.patch.yml` 装配条目
   3. 退出 Launcher → 分离脚本换壳（旧包备份至 `~/Library/Application Support/DSH Backups/`，保留最近 2 份）→ 自动启动新版
 - 主应用低于 v1.0.3 时为旧行为：仅提示，到 [Releases](https://github.com/iiiiiei/dsh-launcher/releases) 下载 zip 按 [Usage](Usage.md#1-安装) 手动覆盖安装
 

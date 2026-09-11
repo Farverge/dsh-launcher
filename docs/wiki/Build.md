@@ -43,7 +43,7 @@ mv ~/Library/Application\ Support/"DSH Launcher.app.bak-<时间戳>" \
 
 **install.sh 已自动完成**（应用安装时随装部署）。手动兜底流程：
 
-1. 拷贝整包到 `~/.dsh/profiles/node_modules/dsh-mini-dialog/`
+1. 拷贝整包到 `~/.dsh/profiles/web/node_modules/dsh-mini-dialog/`（内层官方依赖树；外层 `profiles/node_modules` 是旧布局，会被体检报为陈旧副本）
 2. 在 `~/.dsh/profiles/web/cordis.patch.yml` 的 insert 列表追加：
 
 ```yaml

@@ -45,7 +45,20 @@ curl -fsSL https://raw.githubusercontent.com/iiiiiei/dsh-launcher/main/uninstall
 
 ## 它是如何工作的
 
-Launcher 通过本机回环（`127.0.0.1:3080`）探测 DSH 后端健康并驱动会话；与主应用之间用系统分布式通知交换窗口状态。全部机制与设计决策见 [Wiki · 架构](docs/wiki/Architecture.md)。
+```text
+DSH Launcher（Swift/AppKit 单进程，菜单栏常驻）
+├── StatusIcons         三态状态图标（健康原样 / 过渡「？」闪烁 / 异常「！」）
+├── StatusProbe         自适应健康轮询（稳态 30s、变化后 60s 内加密 5s，不缓存状态）
+├── HotKeyCenter        ⌘⇧D 全局热键
+├── MiniDialogPanel     迷你对话框胶囊（工作区 / 模型 / 思考强度，回车发送）
+├── BackendSpawner      后端未运行时按需代拉（npx 缓存定位 + 健康等待）
+├── CheckupWindow       一键体检窗（十一项只读检测 + 报告头版本方框）
+└── VisibilityMonitor   主应用窗口可见性（分布式通知，事件驱动零轮询）
+对外接触面：仅本机回环 127.0.0.1:3080（探测 DSH 后端健康并驱动会话）
+            + 系统分布式通知（与主应用交换窗口状态）
+```
+
+全部机制与设计决策见 [Wiki · 架构](docs/wiki/Architecture.md)。
 
 ## 注意事项
 
@@ -53,13 +66,24 @@ Launcher 通过本机回环（`127.0.0.1:3080`）探测 DSH 后端健康并驱�
 - Launcher 运行期间全局占用 `⌘⇧D`（Finder 的「前往桌面」快捷键会被拦截）
 - 迷你对话框发送依赖后端可达；后端未运行时 Launcher 会按需代为拉起（需 Node.js，主应用安装器可自动补齐）
 
+更多边界与隐私安全说明见 [Wiki · 注意事项](https://github.com/iiiiiei/dsh-launcher/wiki/注意事项)。
+
 ## 免责声明
 
 > 本项目为社区作品，与 DeepSeek 官方无任何隶属、合作或背书关系。软件按「现状」提供，不附带任何明示或默示的担保。使用者需自行承担使用本项目所产生的一切风险与后果，包括但不限于数据丢失、服务中断或其他损害。将后端暴露到公网存在已知安全风险，请勿在不受信任的网络环境中使用。使用本项目即表示你已阅读并同意上述条款。
 
 ## 查看更多
 
-完整文档在 [Wiki](docs/wiki/Home.md)：
+**GitHub Wiki**（用户向在线文档）：
+
+| 页面 | 内容 |
+|---|---|
+| [Home](https://github.com/iiiiiei/dsh-launcher/wiki) | 定位总览、下载安装入口与页面导航 |
+| [一键体检](https://github.com/iiiiiei/dsh-launcher/wiki/一键体检) | 十一项检测逐项说明、报告头版本方框、条件动作按钮 |
+| [安装与卸载](https://github.com/iiiiiei/dsh-launcher/wiki/安装与卸载) | install.sh 三段式流程、安装位布局、卸载步骤与检查项 |
+| [注意事项](https://github.com/iiiiiei/dsh-launcher/wiki/注意事项) | 系统要求、热键占用、隐私与安全 |
+
+**仓内文档** [docs/wiki](docs/wiki/Home.md)（开发者与维护者向）：
 
 | 页面 | 内容 |
 |---|---|
