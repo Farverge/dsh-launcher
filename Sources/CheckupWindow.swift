@@ -828,10 +828,14 @@ final class CheckupWindowController {
         var screenLines: [NSAttributedString] = []
         var lineKinds: [BoxRowKind?] = []
 
-        // 表头：项目 = 左列头；本地版本号右缘对齐内容右缘；右端 ┐ 与边框同列
-        let headerBase = "┌─ 项目 " + String(repeating: "─", count: 3) + " "
-        var header = padToPx(headerBase + headerRightText,
-                             contentRightPx + spacePx * 2 - px("┐"), "┐")
+        // 表头「——项目——本地版本号——」画法：项目居左，横线填充，┐ 与内容行
+        // 右边框同列（dash 逐格补齐与底框同法；padToPx 只按 tail 预留不追加，
+        // 表头的 ┐ 必须在此显式接上）
+        var header = "┌─ 项目 " + String(repeating: "─", count: 3) + " "
+            + headerRightText + " "
+        let headerTarget = contentRightPx + spacePx * 2 - px("┐")
+        while px(header) < headerTarget { header += "─" }
+        header += "┐"
         screenLines.append(boxLine(header, color: boxFrameColor))
         plainLines.append(header)
         lineKinds.append(nil)
