@@ -787,13 +787,18 @@ final class CheckupWindowController {
         return renderVersionBox(rows: rows, outdatedNames: outdatedNames)
     }
 
-    /// 布局（全部按 Menlo 13 像素宽实测；CJK 回退字体按实测像素，不按「中文=2 格」估算）：
-    /// - 每个内容行 = 「│ 」+ 项目名 + · 点线导引 + 本地版本号 +「│」
-    /// - 版本号**右缘**钉在 contentRightPx（同一列）——按行内剩余像素精确补齐，
-    ///   误差 ≤ 半个点号（≈2px，不可见）；右边框 │ 钉在 contentRightPx + 2 格
-    /// - 不用制表位：真机 NSTextView 对本构造的制表位渲染不齐（实测教训），
-    ///   纯字符 + 像素测算在 Menlo 等宽环境下是确定性的
-    /// - 复制报告的纯文本行与屏幕行同源同字符串
+    /// 布局（制表位绝对定位，第 3 版）。为什么放弃「空格按像素补齐」：CJK 与
+    /// 制表符字形来自回退字体，真机渲染步进相对 size() 实测有漂移（─ 链实测
+    /// 每字符 +0.25pt），且各行「汉字数 ×13pt」的宽度残差模 cell（7.827pt）
+    /// 各不相同——空格按 cell 量子累积永远凑不齐同一目标列。2026-09-12 用户
+    /// 截图像素实测：内容行 │ 落 646、表头 ┐ 650、四全角行 651、底框 ┘ 656，
+    /// 四档错位。制表位是**绝对坐标**（跳到停靠点，与前面累积了什么无关），
+    /// 离线位图实验 7 行右缘全部落在同一 pt：
+    /// - 值列：右制表位钉 contentRightPx（版本号右缘同列，含「（可更新）」后缀）
+    /// - 边框：左制表位钉 borderStopPx（│/┐/┘ 字形起点同列）
+    /// - 点线/横线只做视觉填充，计数按保守步进（cell×1.05+0.3）留防过冲余量
+    ///   ——制表位「跳过停靠点」是唯一失败模式，宁可少一两个填充符绝不超过
+    /// - 复制报告的纯文本行无制表位语义，用空格近似对齐（目视即可）
     private static func renderVersionBox(rows: [BoxRow], outdatedNames: [String]) -> VersionBox {
         let spacePx = pixelWidth(" ")
         let dotCell = pixelWidth("·")
@@ -802,25 +807,38 @@ final class CheckupWindowController {
         let prefixPx = pixelWidth(prefix)
         let headerRightText = "本地版本号"
 
-        // 内容右缘 = 最宽「项目名 + 2 格 + 版本」行 + 3 枚点线保底
+        // 内容右缘（= 值列右缘）= 最宽「项目名 + 2 格 + 版本」行 + 3 枚点线保底
         let contentW = rows.map {
             pixelWidth($0.label) + spacePx * 2 + pixelWidth($0.version + $0.suffix)
         }.max() ?? 0
         let contentRightPx = prefixPx + contentW + dotCell * 3
-        let borderColPx = contentRightPx + spacePx * 2
+        // 右边框字形（│ ┐ ┘）起点：值列后留 2 格内衬
+        let borderStopPx = contentRightPx + spacePx * 2
 
-        func boxLine(_ text: String, color: NSColor) -> NSAttributedString {
+        // 真机渲染步进保守值：size() 对回退字形低估，宁可填充短一点也绝不过停靠点
+        let safeDot = dotCell * 1.05 + 0.3
+        let safeDash = dashCell * 1.05 + 0.3
+
+        func makeStyle(rightAt: [CGFloat], leftAt: [CGFloat]) -> NSParagraphStyle {
+            let style = NSMutableParagraphStyle()
+            var stops = rightAt.map { NSTextTab(textAlignment: .right, location: $0, options: [:]) }
+            stops += leftAt.map { NSTextTab(textAlignment: .left, location: $0, options: [:]) }
+            stops.sort { $0.location < $1.location }
+            style.tabStops = stops
+            return style
+        }
+        let rowStyle = makeStyle(rightAt: [contentRightPx], leftAt: [borderStopPx])
+        let frameStyle = makeStyle(rightAt: [], leftAt: [borderStopPx])
+        func boxLine(_ text: String, color: NSColor, style: NSParagraphStyle) -> NSAttributedString {
             NSAttributedString(string: text, attributes: [
-                .font: boxFont, .foregroundColor: color,
+                .font: boxFont, .foregroundColor: color, .paragraphStyle: style,
             ])
         }
         func px(_ text: String) -> CGFloat { pixelWidth(text) }
-        // 把 text 用空格补到目标像素宽（按实测像素步进），再接 tail
-        func padToPx(_ text: String, _ targetPx: CGFloat, _ tail: String) -> String {
+        // 纯文本行（复制报告）用：空格补到目标像素宽（近似对齐，无制表位语义）
+        func padToPx(_ text: String, _ targetPx: CGFloat) -> String {
             var t = text
-            var w = px(t)
-            let tailW = px(tail)
-            while w + tailW < targetPx { t += " "; w += spacePx }
+            while px(t) < targetPx { t += " " }
             return t
         }
 
@@ -828,16 +846,17 @@ final class CheckupWindowController {
         var screenLines: [NSAttributedString] = []
         var lineKinds: [BoxRowKind?] = []
 
-        // 表头「——项目——本地版本号——」画法：项目居左，横线填充，┐ 与内容行
-        // 右边框同列（dash 逐格补齐与底框同法；padToPx 只按 tail 预留不追加，
-        // 表头的 ┐ 必须在此显式接上）
-        var header = "┌─ 项目 " + String(repeating: "─", count: 3) + " "
-            + headerRightText + " "
-        let headerTarget = contentRightPx + spacePx * 2 - px("┐")
-        while px(header) < headerTarget { header += "─" }
-        header += "┐"
-        screenLines.append(boxLine(header, color: boxFrameColor))
-        plainLines.append(header)
+        // 表头：项目居左 + 横线填充；「本地版本号」右缘钉在值列（与下方版本号
+        // 同列）；┐ 起点钉在边框列
+        let headerLeftPx = px("┌─ 项目 ")
+        let headerDashes = max(1, Int(
+            ((contentRightPx - px(headerRightText) - spacePx - headerLeftPx) / safeDash).rounded(.down)))
+        let header = "┌─ 项目 " + String(repeating: "─", count: headerDashes)
+            + "\t" + headerRightText + "\t┐"
+        screenLines.append(boxLine(header, color: boxFrameColor, style: rowStyle))
+        plainLines.append(padToPx(
+            "┌─ 项目 " + String(repeating: "─", count: headerDashes) + " " + headerRightText,
+            borderStopPx) + "┐")
         lineKinds.append(nil)
 
         // 内容行：项目名左对齐 · 点线导引 · 版本号右对齐（右缘同列）
@@ -845,23 +864,25 @@ final class CheckupWindowController {
             let value = row.version + row.suffix
             let valuePx = px(value)
             let labelEndPx = prefixPx + px(row.label) + spacePx
-            let dotsSpan = contentRightPx - spacePx * 2 - valuePx - labelEndPx
-            let dots = max(3, Int((dotsSpan / dotCell).rounded(.down)))
-            var line = prefix + row.label + " "
-                + String(repeating: "·", count: dots) + " " + value
-            line = padToPx(line, borderColPx - px("│"), "") + "│"
-            screenLines.append(boxLine(line, color: row.color))
-            plainLines.append(line)
+            // 点线终处须严格早于「值起点 - 1 格」，防右制表位过冲
+            let dots = max(2, Int(
+                ((contentRightPx - valuePx - spacePx - labelEndPx) / safeDot).rounded(.down)))
+            let line = prefix + row.label + " " + String(repeating: "·", count: dots)
+                + "\t" + value + "\t│"
+            screenLines.append(boxLine(line, color: row.color, style: rowStyle))
+            plainLines.append(padToPx(padToPx(
+                prefix + row.label + " " + String(repeating: "·", count: dots) + " ",
+                contentRightPx - valuePx) + value, borderStopPx) + "│")
             lineKinds.append(row.kind)
         }
 
-        // 底框：┘ 右缘与边框同列
-        var bottom = "└"
-        let bottomTarget = borderColPx - px("┘")
-        while px(bottom) < bottomTarget { bottom += "─" }
-        bottom += "┘"
-        screenLines.append(boxLine(bottom, color: boxFrameColor))
-        plainLines.append(bottom)
+        // 底框：└ + 横线填充 + 左制表位接 ┘（字形起点同列）
+        let bottomDashes = max(1, Int(
+            ((borderStopPx - px("└") - dashCell) / safeDash).rounded(.down)))
+        let bottom = "└" + String(repeating: "─", count: bottomDashes) + "\t┘"
+        screenLines.append(boxLine(bottom, color: boxFrameColor, style: frameStyle))
+        plainLines.append(padToPx(
+            "└" + String(repeating: "─", count: bottomDashes), borderStopPx) + "┘")
         lineKinds.append(nil)
 
         return VersionBox(plainLines: plainLines, screenLines: screenLines,
