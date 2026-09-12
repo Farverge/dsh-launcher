@@ -148,16 +148,16 @@ final class CheckupWindowController {
         textView.scrollRangeToVisible(NSRange(location: (textView.string as NSString).length, length: 0))
     }
 
-    private func attributed(_ text: String, color: NSColor) -> NSAttributedString {
-        NSAttributedString(
-            string: text,
-            attributes: [
-                // 真机反馈：11pt 看不清，加大到 13pt
-                .font: NSFont(name: "Menlo", size: 13)
-                    ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
-                .foregroundColor: color,
-            ]
-        )
+    private func attributed(_ text: String, color: NSColor,
+                            style: NSParagraphStyle? = nil) -> NSAttributedString {
+        var attributes: [NSAttributedString.Key: Any] = [
+            // 真机反馈：11pt 看不清，加大到 13pt
+            .font: NSFont(name: "Menlo", size: 13)
+                ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
+            .foregroundColor: color,
+        ]
+        if let style { attributes[.paragraphStyle] = style }
+        return NSAttributedString(string: text, attributes: attributes)
     }
 
     @objc private func closeWindow() { window?.orderOut(nil) }
@@ -176,6 +176,26 @@ final class CheckupWindowController {
         let color: NSColor
         var advice: String? = nil
     }
+
+    /// 检测行三列对齐（2026-09-12 用户定稿）：标记 / 名称 / 冒号各占一列，全部左
+    /// 制表位绝对定位——标记 ✓!✗ 宽度不一、名称长短不齐都不再牵动冒号位置。
+    /// 列宽按全部检查名静态测算；改名/加项时同步维护 checkNameList。
+    private static let checkNameList = [
+        "操作系统", "Node", "应用签名", "端口身份", "后端通道", "桥接接口",
+        "norm 协议", "mini 对话框", "profile 装配", "npx 副本", "缓存体量",
+    ]
+    private static let resultMarkStopPx: CGFloat =
+        max(pixelWidth("[✓]"), pixelWidth("[!]"), pixelWidth("[✗]")) + pixelWidth(" ")
+    private static let resultColonStopPx: CGFloat =
+        resultMarkStopPx + (checkNameList.map { pixelWidth($0) }.max() ?? 0) + pixelWidth(" ")
+    private static let resultListStyle: NSParagraphStyle = {
+        let style = NSMutableParagraphStyle()
+        style.tabStops = [
+            NSTextTab(textAlignment: .left, location: resultMarkStopPx, options: [:]),
+            NSTextTab(textAlignment: .left, location: resultColonStopPx, options: [:]),
+        ]
+        return style
+    }()
 
     /// 后端通道形态（根路径探测结论）。alpha 认证链形态属健康：根路径 401 + 固定文案。
     private enum ChannelForm {
@@ -215,9 +235,17 @@ final class CheckupWindowController {
             var advices: [String] = []
             for await result in Self.checkAll() {
                 guard generation == self.checkupGeneration else { return }
+                // 名称去掉旧式对齐尾随空格，三列交给制表位
+                let name = result.name.trimmingCharacters(in: .whitespaces)
                 self.append(line: self.attributed(
-                    "[\(result.mark)] \(result.name)：\(result.value)", color: result.color))
-                self.reportLines.append("[\(result.mark)] \(result.name): \(result.value)")
+                    "[\(result.mark)]\t\(name)\t：\(result.value)",
+                    color: result.color, style: Self.resultListStyle))
+                // 纯文本行无制表位语义：名字补空格近似到冒号列
+                var plainName = name
+                while Self.pixelWidth("[\(result.mark)] \(plainName)") < Self.resultColonStopPx {
+                    plainName += " "
+                }
+                self.reportLines.append("[\(result.mark)] \(plainName)：\(result.value)")
                 if let kind = Self.boxErrorKind(for: result) { self.markBoxRowFailed(kind) }
                 if let advice = result.advice { advices.append(advice) }
             }
@@ -335,7 +363,7 @@ final class CheckupWindowController {
         for nodePath in ["/opt/homebrew/bin/node", "/usr/local/bin/node"] {
             guard FileManager.default.fileExists(atPath: nodePath) else { continue }
             if let version = await runCapture(nodePath, ["--version"]) {
-                return Result(mark: "✓", name: "Node      ", value: "\(version)（\(nodePath)）",
+                return Result(mark: "✓", name: "Node      ", value: "\(version) · \(nodePath)",
                               color: nodeGreen)
             }
         }
@@ -407,13 +435,13 @@ final class CheckupWindowController {
             }
             if code == 401, bodyPrefix.contains("dsh web authentication required") {
                 return (Result(mark: "✓", name: "后端通道 ",
-                               value: "在线 · alpha 认证链形态（健康）", color: nodeGreen), .alphaAuth)
+                               value: "在线 · alpha 认证链形态 · 健康", color: nodeGreen), .alphaAuth)
             }
             if code == 404 {
                 return (Result(mark: "!", name: "后端通道 ",
-                               value: "在线但路由未就绪（后端刚启动？稍后重测）", color: warnColor), .notReady)
+                               value: "在线但路由未就绪 · 后端刚启动？稍后重测", color: warnColor), .notReady)
             }
-            return (Result(mark: "!", name: "后端通道 ", value: "根路径 HTTP \(code)（形态未知）", color: warnColor,
+            return (Result(mark: "!", name: "后端通道 ", value: "根路径 HTTP \(code) · 形态未知", color: warnColor,
                            advice: "端口有监听但通道形态无法识别，请与上方「端口身份」对照确认监听者；稍后可点「重新体检」。"),
                     .unknown)
         } catch {
@@ -450,7 +478,7 @@ final class CheckupWindowController {
             let version = obj["version"] as? String
             let pid = obj["pid"] as? Int ?? 0
             return (Result(mark: "✓", name: "桥接接口 ",
-                           value: "/api/desktop/status ok · dsh v\(version ?? "?") · pid \(pid)",
+                           value: "ok · dsh v\(version ?? "?") · pid \(pid)",
                            color: nodeGreen),
                     (version?.isEmpty == false && version != "?") ? version : nil)
         } catch {
@@ -506,7 +534,7 @@ final class CheckupWindowController {
             let probeText = probeTotal > 0 ? "探测 \(probeOk)/\(probeTotal)" : "探测 ?/4"
             if degradedRaw.isEmpty {
                 return Result(mark: "✓", name: "norm 协议 ",
-                              value: "norm \(version) · \(probeText) · 降级:无", color: nodeGreen)
+                              value: "norm \(version) · \(probeText) · 降级无", color: nodeGreen)
             }
             let labels = degradedRaw.map { item -> String in
                 if let s = item as? String { return s }
@@ -516,7 +544,7 @@ final class CheckupWindowController {
                 return "?"
             }
             return Result(mark: "!", name: "norm 协议 ",
-                          value: "norm \(version) · \(probeText) · 降级:\(labels.joined(separator: "、"))",
+                          value: "norm \(version) · \(probeText) · 降级 \(labels.joined(separator: "、"))",
                           color: warnColor)
         } catch {
             return Result(mark: "!", name: "norm 协议 ",
@@ -534,21 +562,21 @@ final class CheckupWindowController {
         // 内层缺席而外层在场：报外层陈旧副本的存在，提示迁移而非假装已安装
         if let outer = packageVersion(at: outerPkg), packageVersion(at: innerPkg) == nil {
             return Result(mark: "!", name: "mini 对话框",
-                          value: "\(outer) 在外层旧树（imports 有解析到旧模块风险；重跑 launcher 一键安装迁至内层）",
+                          value: "\(outer) 在外层旧树 · imports 有解析到旧模块风险 · 重跑 launcher 一键安装迁至内层",
                           color: warnColor)
         }
         guard let version = packageVersion(at: innerPkg) else {
-            return Result(mark: "!", name: "mini 对话框", value: "未安装（launcher 一键安装可补）", color: warnColor)
+            return Result(mark: "!", name: "mini 对话框", value: "未安装 · launcher 一键安装可补", color: warnColor)
         }
         guard let semver = parseVersion(version) else {
             return Result(mark: "!", name: "mini 对话框",
-                          value: "\(version)（版本无法解析，建议升级 0.2.0+）", color: warnColor)
+                          value: "\(version) · 版本无法解析，建议升级 0.2.0+", color: warnColor)
         }
         if semver >= (0, 2, 0) {
-            return Result(mark: "✓", name: "mini 对话框", value: "\(version)（focus 走 norm）", color: nodeGreen)
+            return Result(mark: "✓", name: "mini 对话框", value: "\(version) · focus 走 norm", color: nodeGreen)
         }
         return Result(mark: "!", name: "mini 对话框",
-                      value: "\(version)（旧版自带 WS 通道，建议升级 0.2.0+ 并部署 norm）", color: warnColor)
+                      value: "\(version) · 旧版自带 WS 通道 · 建议升级 0.2.0+ 并部署 norm", color: warnColor)
     }
 
     /// profile 工作区装配（alpha.3 白屏坑）：0.1.2-alpha 起 GUI 装配在 pnpm 工作区
@@ -557,17 +585,17 @@ final class CheckupWindowController {
         let webAppRoot = NSHomeDirectory() + "/.dsh/profiles/web/node_modules/@deepseek-ai/dsh-web-app"
         var isDir: ObjCBool = false
         if FileManager.default.fileExists(atPath: webAppRoot, isDirectory: &isDir), isDir.boolValue {
-            return Result(mark: "✓", name: "profile 装配", value: "已装配（GUI 可启动）", color: nodeGreen)
+            return Result(mark: "✓", name: "profile 装配", value: "已装配 · GUI 可启动", color: nodeGreen)
         }
         let version = backendVersion ?? "<后端版本>"
         var fix = "修复：cd ~/.dsh/profiles/web && pnpm add "
                   + "@deepseek-ai/dsh-base@\(version) @deepseek-ai/dsh-web-app@\(version)"
         if backendVersion == nil { fix += "（后端版本待在线后重测获取）" }
         if backendOnline {
-            return Result(mark: "✗", name: "profile 装配", value: "未装配——GUI 将白屏", color: nodeRed, advice: fix)
+            return Result(mark: "✗", name: "profile 装配", value: "未装配 · GUI 将白屏", color: nodeRed, advice: fix)
         }
         return Result(mark: "!", name: "profile 装配",
-                      value: "未装配（后端未运行；GUI 启动前需装配，否则白屏）", color: warnColor, advice: fix)
+                      value: "未装配 · 后端未运行 · GUI 启动前需装配，否则白屏", color: warnColor, advice: fix)
     }
 
     /// npx 副本数：数 ~/.npm/_npx 下装着 @deepseek-ai/dsh 的缓存目录个数。
@@ -592,17 +620,17 @@ final class CheckupWindowController {
         if copies == 0 {
             if profileDeployed {
                 return Result(mark: "✓", name: "npx 副本  ",
-                              value: "npx 缓存 0 份；profile 内有安装版（干净）", color: nodeGreen)
+                              value: "npx 缓存 0 份 · profile 内有安装版 · 干净", color: nodeGreen)
             }
             return Result(mark: "✗", name: "npx 副本  ", value: "未发现 @deepseek-ai/dsh 缓存", color: nodeRed,
                           advice: "后端尚未经 npx 安装过；第一次启动主应用会自动完成。")
         }
-        let profileNote = profileDeployed ? "；profile 内另有安装版" : ""
+        let profileNote = profileDeployed ? " · profile 内另有安装版" : ""
         if copies > 1 {
             return Result(mark: "!", name: "npx 副本  ", value: "发现 \(copies) 份 @deepseek-ai/dsh 缓存\(profileNote)", color: warnColor,
                           advice: "多副本无害（解析链自动选活跃副本），仅占磁盘。如需释放空间点下方「释放 npm 缓存」；如需手动清点副本点「打开 npx 目录」。")
         }
-        return Result(mark: "✓", name: "npx 副本  ", value: "恰好 1 份（健康）\(profileNote)", color: nodeGreen)
+        return Result(mark: "✓", name: "npx 副本  ", value: "恰好 1 份 · 健康\(profileNote)", color: nodeGreen)
     }
 
     /// 失效缓存体量：_npx 与 _cacache 的粗粒度只读统计（du），超过阈值给建议
@@ -755,9 +783,19 @@ final class CheckupWindowController {
             rows.append(BoxRow(kind: .backend, label: "后端 dsh", version: backend,
                                suffix: "", color: boxBodyColor))
         }
+        // 项目列前缀（2026-09-12 用户定稿）：插件行写功能名 + 插件 ID，如
+        // 「后端插件协议 dsh-plugin-norm」；表外插件回落「插件」
+        let pluginDisplayNames = [
+            "dsh-plugin-norm": "后端插件协议",
+            "dsh-theme-sdk": "主题SDK",
+            "dsh-mini-dialog": "迷你对话框",
+            "dsh-l10n-zh": "中文语言包",
+            "dsh-theme-grok": "Grok 主题",
+        ]
         var pluginRows = installedPluginVersions().map {
-            BoxRow(kind: .plugin($0.name), label: "插件 \($0.name)", version: $0.version,
-                   suffix: "", color: boxBodyColor)
+            BoxRow(kind: .plugin($0.name),
+                   label: (pluginDisplayNames[$0.name] ?? "插件") + " " + $0.name,
+                   version: $0.version, suffix: "", color: boxBodyColor)
         }
         var outdatedNames: [String] = []
         await withTaskGroup(of: (String, String?).self) { group in
@@ -812,8 +850,8 @@ final class CheckupWindowController {
             pixelWidth($0.label) + spacePx * 2 + pixelWidth($0.version + $0.suffix)
         }.max() ?? 0
         let contentRightPx = prefixPx + contentW + dotCell * 3
-        // 右边框字形（│ ┐ ┘）起点：值列后留 2 格内衬
-        let borderStopPx = contentRightPx + spacePx * 2
+        // 右边框字形（│ ┐ ┘）起点：值列后留 1 格内衬——与左侧「│ 」的 1 格对称
+        let borderStopPx = contentRightPx + spacePx
 
         // 真机渲染步进保守值：size() 对回退字形低估，宁可填充短一点也绝不过停靠点
         let safeDot = dotCell * 1.05 + 0.3
@@ -846,17 +884,18 @@ final class CheckupWindowController {
         var screenLines: [NSAttributedString] = []
         var lineKinds: [BoxRowKind?] = []
 
-        // 表头：项目居左 + 横线填充；「本地版本号」右缘钉在值列（与下方版本号
-        // 同列）；┐ 起点钉在边框列
+        // 表头与内容行同构：项目 = 左列头，「本地版本号」= 右列头右缘钉值列——
+        // 点线导引 + 双制表位，两侧留白与内容行完全一致（原横线填充版
+        // 「本地版本号」左右空隙不等大，2026-09-12 用户定稿改同构画法）
         let headerLeftPx = px("┌─ 项目 ")
-        let headerDashes = max(1, Int(
-            ((contentRightPx - px(headerRightText) - spacePx - headerLeftPx) / safeDash).rounded(.down)))
-        let header = "┌─ 项目 " + String(repeating: "─", count: headerDashes)
+        let headerDots = max(2, Int(
+            ((contentRightPx - px(headerRightText) - spacePx - headerLeftPx) / safeDot).rounded(.down)))
+        let header = "┌─ 项目 " + String(repeating: "·", count: headerDots)
             + "\t" + headerRightText + "\t┐"
         screenLines.append(boxLine(header, color: boxFrameColor, style: rowStyle))
-        plainLines.append(padToPx(
-            "┌─ 项目 " + String(repeating: "─", count: headerDashes) + " " + headerRightText,
-            borderStopPx) + "┐")
+        plainLines.append(padToPx(padToPx(
+            "┌─ 项目 " + String(repeating: "·", count: headerDots) + " ",
+            contentRightPx - px(headerRightText)) + headerRightText, borderStopPx) + "┐")
         lineKinds.append(nil)
 
         // 内容行：项目名左对齐 · 点线导引 · 版本号右对齐（右缘同列）
@@ -922,7 +961,9 @@ final class CheckupWindowController {
         guard !result.value.contains("后端未运行") else { return nil }
         if result.name == "norm 协议 " {
             if result.mark == "✗" { return .plugin("dsh-plugin-norm") }
-            if result.mark == "!" && !result.value.contains("降级:") { return .plugin("dsh-plugin-norm") }
+            // 「探测 x/x」= caps 已应答（! + 降级清单属功能告警不算运行错误）；
+            // 未加载/异常/报文异常/连接失败的 ! 值里没有这一段
+            if result.mark == "!" && !result.value.contains("探测 ") { return .plugin("dsh-plugin-norm") }
             return nil
         }
         if result.name == "mini 对话框", result.mark == "✗" { return .plugin("dsh-mini-dialog") }
