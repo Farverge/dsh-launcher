@@ -869,12 +869,14 @@ final class CheckupWindowController {
             pixelWidth($0.label) + spacePx * 2 + pixelWidth($0.version + $0.suffix)
         }.max() ?? 0
         let contentRightPx = prefixPx + contentW + dotCell * 3
-        // 行样式只用一个停靠位：值列右缘（真机已验证精确落位）。右边框字形
-        // （│ ┐ ┘）不用制表位——值后接一个 Menlo 空格（主字体步进精确无漂移）
-        // 直接拼上：位置 = contentRight + 1 格，与左侧「│ 」的 1 格对称。
-        // （2026-09-12 真机教训：行内第二个制表位会被 NSTextView 统一右偏
-        // ~1.5 格，双停靠位构造整体漂移；单右停靠位 + 精确空格彻底绕开）
-        let borderStopPx = contentRightPx + spacePx
+        // 制表位语义（2026-09-12 定稿，第 6 版）：右停靠位把「制表符到行尾的
+        // 整段」右对齐到停靠位——整段 = 值 + 空格 + 边框字形。停靠位定在
+        // contentRight + 2 格（值右缘 + 1 格内衬 + 边框字形一格），整段右缘
+        // 钉停靠位 ⇒ 值右缘恰在 contentRight、边框字形紧随其后，│ ┐ ┘ 的
+        // 墨迹右缘同列闭合。填充预算 = 停靠位 - 整段实测宽 - eps（measuredWidth
+        // 同引擎实测，装不下必跳默认停靠位——跳位后落点随段宽浮动，即历史
+        // 各版「看似对齐实则错位」的根因）
+        let borderStopPx = contentRightPx + spacePx * 2
 
         // 填充计数由 measuredWidth 实测驱动：逐枚加到装不下为止，右制表位前
         // 留 eps 余量（实测与终渲染同引擎，误差仅像素取整 ≤0.5px，eps 放大 8 倍）
@@ -916,9 +918,10 @@ final class CheckupWindowController {
         // 表头与内容行同构（2026-09-12 二次定稿：顶部实线）：项目 = 左列头，
         // 横线填充；「本地版本号」右缘钉值列（右制表位）；┐ 钉边框列——
         // 两个制表位都被真实文本消费，与内容行同一套经验证的构造
+        let headerChunk = headerRightText + " ┐"
         let headerDashes = max(2, fillCount(
             prefix: "┌─ 项目 ", fill: "─",
-            budget: contentRightPx - measuredWidth(headerRightText) - eps))
+            budget: borderStopPx - measuredWidth(headerChunk) - eps))
         let header = "┌─ 项目 " + String(repeating: "─", count: headerDashes)
             + "\t" + headerRightText + " ┐"
         screenLines.append(boxLine(header, color: boxFrameColor, style: rowStyle))
@@ -932,10 +935,11 @@ final class CheckupWindowController {
             let value = row.version + row.suffix
             let valuePx = px(value)
             let labelEndPx = prefixPx + px(row.label) + spacePx
-            // 点线装到值起点 - eps 为止（实测驱动，右制表位绝不过冲）
+            // 点线预算 = 停靠位 - 整段（值+空格+│）实测宽 - eps
+            let rowChunk = value + " │"
             let dots = max(2, fillCount(
                 prefix: prefix + row.label + " ", fill: "·",
-                budget: contentRightPx - valuePx - eps))
+                budget: borderStopPx - measuredWidth(rowChunk) - eps))
             let line = prefix + row.label + " " + String(repeating: "·", count: dots)
                 + "\t" + value + " │"
             screenLines.append(boxLine(line, color: row.color, style: rowStyle))
@@ -950,14 +954,24 @@ final class CheckupWindowController {
         // 接 ┘。单停靠位样式在真机 NSTextView 上实测会跳位（┘ 落后停靠位 +2 格，
         // 右下角不闭合）；行样式的两个停靠位都被真实文本消费，经验证不跳位。
         // 末段横线与 ┘ 之间的 1 格间隙 = 内容行「值→│」的内衬列，网格一致
-        let bottomDashes = max(1, fillCount(
-            prefix: "└", fill: "─",
-            budget: contentRightPx - measuredWidth("─") - eps))
-        // 值组（右锚到值列）吃掉链后剩余整格，缺口收敛到 ≤1 枚横线宽
-        let bottomLeftover = contentRightPx - eps
-            - measuredWidth("└" + String(repeating: "─", count: bottomDashes))
-        let valueDashW = measuredWidth("─")
-        let bottomValueDashes = max(1, Int(bottomLeftover / valueDashW))
+        // 底框整段 = K 枚横线 + 空格 + ┘（右锚停靠位）；链与整段按剩余空间
+        // 联动迭代：K 逐枚加，链始终留得住至少 1 枚横线为止
+        var bottomValueDashes = 1
+        var bottomDashes = 1
+        while true {
+            let chunk = String(repeating: "─", count: bottomValueDashes) + " ┘"
+            let n = fillCount(prefix: "└", fill: "─",
+                              budget: borderStopPx - measuredWidth(chunk) - eps)
+            if n < 1 { break }
+            bottomDashes = n
+            let chainW = measuredWidth("└" + String(repeating: "─", count: n))
+            let spare = borderStopPx - measuredWidth(chunk) - eps - chainW
+            if spare >= measuredWidth("─") && bottomValueDashes < 8 {
+                bottomValueDashes += 1
+            } else {
+                break
+            }
+        }
         let bottom = "└" + String(repeating: "─", count: bottomDashes)
             + "\t" + String(repeating: "─", count: bottomValueDashes) + " ┘"
         screenLines.append(boxLine(bottom, color: boxFrameColor, style: rowStyle))
