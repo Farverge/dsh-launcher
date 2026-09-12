@@ -263,11 +263,6 @@ final class CheckupWindowController {
             }
             self.append(line: self.attributed("── 完 ──", color: self.titleColor))
             self.refreshActionButtons(advices: advices)
-            // 【边框校准】真机 textView 右制表位落位带 ±1/3 格量化残差（随填充
-            // 尾端浮动；离线同引擎复刻不出）。放在全文落定之后——后续无追加、
-            // 无重排，校准结果稳定。读实际 │┐┘ 落位，按行右移停靠位对齐到最大列
-            // （只右移永保整段富余），循环至收敛（上限 3 拍）
-            self.calibrateBoxBorders()
         }
     }
 
@@ -849,7 +844,11 @@ final class CheckupWindowController {
         return renderVersionBox(rows: rows, outdatedNames: outdatedNames)
     }
 
-    /// 布局（第 4 版，2026-09-12 定稿）。三段历史教训：
+    /// 布局（回滚到 382f412 定稿构造——保守步进填充 + 单右停靠位，真机实测
+    /// │┐┘ 全线同列、用户认可的对齐状态；后续「实测收紧/自校准」方案全部撤销
+    /// ——它们扰动制表位落位反而散列（2026-09-13 复盘定案）。仅一处改动：
+    /// 底角 ┘ 与横线并入同一右锚段（连体无空隙）修「右下角不闭合」，行列填充
+    /// 分毫未动。
     /// - 空格按像素补齐：CJK/制表符回退字体渲染步进有漂移，各行汉字数不同
     ///   → 残差模 cell 各异 → 右缘四档错位（用户截图像素实测 646/650/651/656）
     /// - 双制表位（值右锚 + 边框左锚）：真机 NSTextView 对行内第二个制表位
@@ -857,11 +856,10 @@ final class CheckupWindowController {
     /// - 单左制表位：同样跳位（┘ 落后停靠位 +2 格，右下角不闭合）
     /// 定稿构造：**只保留一个右制表位**（值列右缘，真机像素验证精确落位），
     /// 边框字形不占制表位——值后接一个 Menlo 空格（主字体步进精确无漂移）
-    /// 直接拼 │/┐/┘：位置 = contentRight + 1 格，与左侧「│ 」对称。填充计数由
-    /// measuredWidth（NSLayoutManager 实测，与 textView 同引擎）驱动，右制表位
-    /// 前留 eps 余量——「跳过停靠点」是唯一失败模式，实测同引擎误差 ≤0.5px，
-    /// eps=2pt 已是 8 倍安全。纯文本行（复制报告）用空格近似。框宽全部由
-    /// 当次行集动态测算
+    /// 直接拼 │/┐/┘：位置 = contentRight + 1 格，与左侧「│ 」对称。点线/横线
+    /// 只做视觉填充，计数按保守步进（cell×1.05+0.3）留防过冲余量——右制表位
+    /// 「跳过停靠点」是唯一失败模式，宁可少一两个填充符绝不超过。纯文本行
+    /// （复制报告）无制表位语义，用空格近似。框宽全部由当次行集动态测算
     private static func renderVersionBox(rows: [BoxRow], outdatedNames: [String]) -> VersionBox {
         let spacePx = pixelWidth(" ")
         let dotCell = pixelWidth("·")
@@ -871,29 +869,24 @@ final class CheckupWindowController {
         let headerRightText = "本地版本号"
 
         // 内容右缘（= 值列右缘）= 最宽「项目名 + 2 格 + 版本」行 + 3 枚点线保底
+        // + 2 格纯余量：最宽行的制表位余量与「值+空格+│」段宽之差恒 ≈ 1 格点线
+        // 减 │ 宽 ≈ 0（临界），真机微扰会让引擎放弃右锚改左对齐回退 → 该行 │
+        // 偏 3 格（2026-09-13 Grok 行 0.43.0-theme.1 超长版本实测触发）。多给
+        // 2 格缓冲后差值恒 +2 格，任何行集安全
         let contentW = rows.map {
             pixelWidth($0.label) + spacePx * 2 + pixelWidth($0.version + $0.suffix)
         }.max() ?? 0
-        let contentRightPx = prefixPx + contentW + dotCell * 3
-        // 制表位语义（2026-09-12 定稿，第 6 版）：右停靠位把「制表符到行尾的
-        // 整段」右对齐到停靠位——整段 = 值 + 空格 + 边框字形。停靠位定在
-        // contentRight + 2 格（值右缘 + 1 格内衬 + 边框字形一格），整段右缘
-        // 钉停靠位 ⇒ 值右缘恰在 contentRight、边框字形紧随其后，│ ┐ ┘ 的
-        // 墨迹右缘同列闭合。填充预算 = 停靠位 - 整段实测宽 - eps（measuredWidth
-        // 同引擎实测，装不下必跳默认停靠位——跳位后落点随段宽浮动，即历史
-        // 各版「看似对齐实则错位」的根因）
-        let borderStopPx = contentRightPx + spacePx * 2
+        let contentRightPx = prefixPx + contentW + dotCell * 3 + spacePx * 2
+        // 行样式只用一个停靠位：值列右缘（真机已验证精确落位）。右边框字形
+        // （│ ┐ ┘）不用制表位——值后接一个 Menlo 空格（主字体步进精确无漂移）
+        // 直接拼上：位置 = contentRight + 1 格，与左侧「│ 」的 1 格对称。
+        // （2026-09-12 真机教训：行内第二个制表位会被 NSTextView 统一右偏
+        // ~1.5 格，双停靠位构造整体漂移；单右停靠位 + 精确空格彻底绕开）
+        let borderStopPx = contentRightPx + spacePx
 
-        // 填充计数由 measuredWidth 实测驱动：逐枚加到装不下为止，右制表位前
-        // 留 eps 余量（实测与终渲染同引擎，误差仅像素取整 ≤0.5px，eps 放大 8 倍）
-        let eps: CGFloat = 2.0
-        func fillCount(prefix: String, fill: String, budget: CGFloat) -> Int {
-            var n = 0
-            while measuredWidth(prefix + String(repeating: fill, count: n + 1)) <= budget {
-                n += 1
-            }
-            return n
-        }
+        // 真机渲染步进保守值：size() 对回退字形低估，宁可填充短一点也绝不过停靠点
+        let safeDot = dotCell * 1.05 + 0.3
+        let safeDash = dashCell * 1.05 + 0.3
 
         func makeStyle(rightAt: [CGFloat], leftAt: [CGFloat]) -> NSParagraphStyle {
             let style = NSMutableParagraphStyle()
@@ -924,10 +917,9 @@ final class CheckupWindowController {
         // 表头与内容行同构（2026-09-12 二次定稿：顶部实线）：项目 = 左列头，
         // 横线填充；「本地版本号」右缘钉值列（右制表位）；┐ 钉边框列——
         // 两个制表位都被真实文本消费，与内容行同一套经验证的构造
-        let headerChunk = headerRightText + " ┐"
-        let headerDashes = max(2, fillCount(
-            prefix: "┌─ 项目 ", fill: "─",
-            budget: borderStopPx - measuredWidth(headerChunk) - eps))
+        let headerLeftPx = px("┌─ 项目 ")
+        let headerDashes = max(2, Int(
+            ((contentRightPx - px(headerRightText) - spacePx - headerLeftPx) / safeDash).rounded(.down)))
         let header = "┌─ 项目 " + String(repeating: "─", count: headerDashes)
             + "\t" + headerRightText + " ┐"
         screenLines.append(boxLine(header, color: boxFrameColor, style: rowStyle))
@@ -941,11 +933,9 @@ final class CheckupWindowController {
             let value = row.version + row.suffix
             let valuePx = px(value)
             let labelEndPx = prefixPx + px(row.label) + spacePx
-            // 点线预算 = 停靠位 - 整段（值+空格+│）实测宽 - eps
-            let rowChunk = value + " │"
-            let dots = max(2, fillCount(
-                prefix: prefix + row.label + " ", fill: "·",
-                budget: borderStopPx - measuredWidth(rowChunk) - eps))
+            // 点线终处须严格早于「值起点 - 1 格」，防右制表位过冲
+            let dots = max(2, Int(
+                ((contentRightPx - valuePx - spacePx - labelEndPx) / safeDot).rounded(.down)))
             let line = prefix + row.label + " " + String(repeating: "·", count: dots)
                 + "\t" + value + " │"
             screenLines.append(boxLine(line, color: row.color, style: rowStyle))
@@ -955,31 +945,16 @@ final class CheckupWindowController {
             lineKinds.append(row.kind)
         }
 
-        // 底框（2026-09-12 二次定稿）：与内容行完全同构——└ + 横线（label 侧）
-        // + 右制表位锚一枚横线到值列右缘（充当「值」消费第一个停靠位）+ 左制表位
-        // 接 ┘。单停靠位样式在真机 NSTextView 上实测会跳位（┘ 落后停靠位 +2 格，
-        // 右下角不闭合）；行样式的两个停靠位都被真实文本消费，经验证不跳位。
-        // 末段横线与 ┘ 之间的 1 格间隙 = 内容行「值→│」的内衬列，网格一致
-        // 底框整段 = K 枚横线 + 空格 + ┘（右锚停靠位）；链与整段按剩余空间
-        // 联动迭代：K 逐枚加，链始终留得住至少 1 枚横线为止
-        var bottomValueDashes = 1
-        var bottomDashes = 1
-        while true {
-            let chunk = String(repeating: "─", count: bottomValueDashes) + " ┘"
-            let n = fillCount(prefix: "└", fill: "─",
-                              budget: borderStopPx - measuredWidth(chunk) - eps)
-            if n < 1 { break }
-            bottomDashes = n
-            let chainW = measuredWidth("└" + String(repeating: "─", count: n))
-            let spare = borderStopPx - measuredWidth(chunk) - eps - chainW
-            if spare >= measuredWidth("─") && bottomValueDashes < 8 {
-                bottomValueDashes += 1
-            } else {
-                break
-            }
-        }
+        // 底框：与行同机制——└ + 保守横线链 + 右锚段（K 枚横线与 ┘ 连体，
+        // 段右缘 = contentRight = 行段同列）。链保守留隙由段内横线吃掉整格，
+        // 底角闭合；全部沿用 px()/safeDash 保守口径，不触碰行列填充
+        let bottomDashes = max(1, Int(
+            ((contentRightPx - px("└") - dashCell * 3) / safeDash).rounded(.down)))
+        let bottomChainPx = px("└") + CGFloat(bottomDashes) * safeDash
+        let bottomValueDashes = max(1, Int(
+            ((contentRightPx - bottomChainPx - spacePx - px("┘")) / safeDash).rounded(.down)))
         let bottom = "└" + String(repeating: "─", count: bottomDashes)
-            + "\t" + String(repeating: "─", count: bottomValueDashes) + " ┘"
+            + "\t" + String(repeating: "─", count: bottomValueDashes) + "┘"
         screenLines.append(boxLine(bottom, color: boxFrameColor, style: rowStyle))
         plainLines.append(padToPx(
             "└" + String(repeating: "─", count: bottomDashes), borderStopPx) + "┘")
@@ -989,55 +964,6 @@ final class CheckupWindowController {
                           lineKinds: lineKinds, outdatedNames: outdatedNames)
     }
 
-
-    /// 边框自校准：对本窗已排版的方框行，读 │/┐/┘ 实际 x，全体对齐到最大列
-    private func calibrateBoxBorders() {
-        guard let textView, let lm = textView.layoutManager, let container = textView.textContainer else { return }
-        let storage = textView.textStorage
-        let str = textView.string as NSString
-        // kern 补偿：停靠位位移在在窗布局上实测无效（落位对 stop 不敏感），
-        // kern 直接改字形步进、强制真实重排——对边框字形前的空格加 kern，
-        // 把 │┐┘ 精确推到全体最大列
-        for pass in 0..<3 {
-            lm.ensureLayout(for: container)
-            struct RowInfo { let kernAt: Int; let barX: CGFloat; let kern: CGFloat }
-            var rowsInfo: [RowInfo] = []
-            var charIdx = 0
-            for line in str.components(separatedBy: "\n") {
-                let len = line.count
-                defer { charIdx += len + 1 }
-                guard len > 0, line.contains("\t") else { continue }
-                let lineRange = NSRange(location: charIdx, length: len)
-                let gr = lm.glyphRange(forCharacterRange: lineRange, actualCharacterRange: nil)
-                guard gr.length > 0 else { continue }
-                var barChar = -1
-                var barX: CGFloat = -1
-                for g in stride(from: gr.length - 1, through: 0, by: -1) {
-                    let c = lm.characterIndexForGlyph(at: gr.location + g)
-                    let ch = str.substring(with: NSRange(location: c, length: 1))
-                    if ch == "│" || ch == "┐" || ch == "┘" {
-                        barChar = c
-                        barX = lm.boundingRect(forGlyphRange: NSRange(location: gr.location + g, length: 1),
-                                               in: container).minX
-                        break
-                    }
-                }
-                guard barChar > 0 else { continue }   // 前一个字符即 kern 承接位（构造保证是空格）
-                let kern = (storage?.attribute(.kern, at: barChar - 1, effectiveRange: nil) as? CGFloat) ?? 0
-                rowsInfo.append(RowInfo(kernAt: barChar - 1, barX: barX, kern: kern))
-            }
-            guard rowsInfo.count > 1 else { return }
-            let target = rowsInfo.map { $0.barX }.max()!
-            var moved = false
-            for row in rowsInfo where row.barX < target - 0.3 {
-                let delta = target - row.barX
-                storage?.addAttribute(.kern, value: row.kern + delta, range: NSRange(location: row.kernAt, length: 1))
-                moved = true
-            }
-            if !moved { break }
-        }
-        lm.ensureLayout(for: container)
-    }
 
     /// 方框渲染进文本视图：屏幕行逐行追加；可回填行记录屏幕区间，供检测流出结论后改色；
     /// 纯文本行同步进 reportLines，复制报告时一并带上
