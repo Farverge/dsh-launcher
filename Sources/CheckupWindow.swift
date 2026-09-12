@@ -231,6 +231,11 @@ final class CheckupWindowController {
             if let box {
                 self.appendVersionBox(box)
                 self.outdatedPluginNames = box.outdatedNames
+                // 【边框校准】真机 textView 右制表位落位带 ±1/3 格残差（随填充
+                // 尾端浮动，应用内自诊断实测 351.8-357.2 散布；离线同引擎复刻
+                // 不出）——读实际落位，按行右移停靠位补偿到全体最大列（只右移，
+                // 永不缩小整段的富余），两拍收敛
+                self.calibrateBoxBorders()
             }
             var advices: [String] = []
             for await result in Self.checkAll() {
@@ -981,6 +986,54 @@ final class CheckupWindowController {
 
         return VersionBox(plainLines: plainLines, screenLines: screenLines,
                           lineKinds: lineKinds, outdatedNames: outdatedNames)
+    }
+
+
+    /// 边框自校准：对本窗已排版的方框行，读 │/┐/┘ 实际 x，全体对齐到最大列
+    private func calibrateBoxBorders() {
+        guard let textView, let lm = textView.layoutManager, let container = textView.textContainer else { return }
+        let str = textView.string as NSString
+        for _ in 0..<1 {
+            lm.ensureLayout(for: container)
+            struct RowInfo { let range: NSRange; let barX: CGFloat; let stop: CGFloat }
+            var rowsInfo: [RowInfo] = []
+            var charIdx = 0
+            for line in str.components(separatedBy: "\n") {
+                let len = line.count
+                defer { charIdx += len + 1 }
+                guard len > 0, line.contains("\t") else { continue }
+                let lineRange = NSRange(location: charIdx, length: len)
+                guard let ps = textView.textStorage?.attribute(.paragraphStyle, at: charIdx,
+                                                                effectiveRange: nil) as? NSParagraphStyle,
+                      let tab = ps.tabStops.first else { continue }
+                let gr = lm.glyphRange(forCharacterRange: lineRange, actualCharacterRange: nil)
+                guard gr.length > 0 else { continue }
+                var barX: CGFloat = -1
+                for g in stride(from: gr.length - 1, through: 0, by: -1) {
+                    let c = lm.characterIndexForGlyph(at: gr.location + g)
+                    let ch = str.substring(with: NSRange(location: c, length: 1))
+                    if ch == "│" || ch == "┐" || ch == "┘" {
+                        barX = lm.boundingRect(forGlyphRange: NSRange(location: gr.location + g, length: 1),
+                                               in: container).minX
+                        break
+                    }
+                }
+                guard barX >= 0 else { continue }
+                rowsInfo.append(RowInfo(range: lineRange, barX: barX, stop: tab.location))
+            }
+            guard rowsInfo.count > 1 else { return }
+            let target = rowsInfo.map { $0.barX }.max()!
+            var moved = false
+            for row in rowsInfo where row.barX < target - 0.3 {
+                let delta = target - row.barX
+                let ps = NSMutableParagraphStyle()
+                ps.tabStops = [NSTextTab(textAlignment: .right, location: row.stop + delta, options: [:])]
+                textView.textStorage?.addAttribute(.paragraphStyle, value: ps, range: row.range)
+                moved = true
+            }
+            if !moved { break }
+        }
+        lm.ensureLayout(for: container)
     }
 
     /// 方框渲染进文本视图：屏幕行逐行追加；可回填行记录屏幕区间，供检测流出结论后改色；
