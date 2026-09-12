@@ -787,7 +787,7 @@ final class CheckupWindowController {
         // 「后端插件协议 dsh-plugin-norm」；表外插件回落「插件」
         let pluginDisplayNames = [
             "dsh-plugin-norm": "后端插件协议",
-            "dsh-theme-sdk": "主题SDK",
+            "dsh-theme-sdk": "后端主题插件",
             "dsh-mini-dialog": "迷你对话框",
             "dsh-l10n-zh": "中文语言包",
             "dsh-theme-grok": "Grok 主题",
@@ -825,18 +825,18 @@ final class CheckupWindowController {
         return renderVersionBox(rows: rows, outdatedNames: outdatedNames)
     }
 
-    /// 布局（制表位绝对定位，第 3 版）。为什么放弃「空格按像素补齐」：CJK 与
-    /// 制表符字形来自回退字体，真机渲染步进相对 size() 实测有漂移（─ 链实测
-    /// 每字符 +0.25pt），且各行「汉字数 ×13pt」的宽度残差模 cell（7.827pt）
-    /// 各不相同——空格按 cell 量子累积永远凑不齐同一目标列。2026-09-12 用户
-    /// 截图像素实测：内容行 │ 落 646、表头 ┐ 650、四全角行 651、底框 ┘ 656，
-    /// 四档错位。制表位是**绝对坐标**（跳到停靠点，与前面累积了什么无关），
-    /// 离线位图实验 7 行右缘全部落在同一 pt：
-    /// - 值列：右制表位钉 contentRightPx（版本号右缘同列，含「（可更新）」后缀）
-    /// - 边框：左制表位钉 borderStopPx（│/┐/┘ 字形起点同列）
-    /// - 点线/横线只做视觉填充，计数按保守步进（cell×1.05+0.3）留防过冲余量
-    ///   ——制表位「跳过停靠点」是唯一失败模式，宁可少一两个填充符绝不超过
-    /// - 复制报告的纯文本行无制表位语义，用空格近似对齐（目视即可）
+    /// 布局（第 4 版，2026-09-12 定稿）。三段历史教训：
+    /// - 空格按像素补齐：CJK/制表符回退字体渲染步进有漂移，各行汉字数不同
+    ///   → 残差模 cell 各异 → 右缘四档错位（用户截图像素实测 646/650/651/656）
+    /// - 双制表位（值右锚 + 边框左锚）：真机 NSTextView 对行内第二个制表位
+    ///   统一右偏 ~1.5 格（离线 drawWithRect 无此现象），整框右缘漂移
+    /// - 单左制表位：同样跳位（┘ 落后停靠位 +2 格，右下角不闭合）
+    /// 定稿构造：**只保留一个右制表位**（值列右缘，真机像素验证精确落位），
+    /// 边框字形不占制表位——值后接一个 Menlo 空格（主字体步进精确无漂移）
+    /// 直接拼 │/┐/┘：位置 = contentRight + 1 格，与左侧「│ 」对称。点线/横线
+    /// 只做视觉填充，计数按保守步进（cell×1.05+0.3）留防过冲余量——右制表位
+    /// 「跳过停靠点」是唯一失败模式，宁可少一两个填充符绝不超过。纯文本行
+    /// （复制报告）无制表位语义，用空格近似。框宽全部由当次行集动态测算
     private static func renderVersionBox(rows: [BoxRow], outdatedNames: [String]) -> VersionBox {
         let spacePx = pixelWidth(" ")
         let dotCell = pixelWidth("·")
@@ -850,7 +850,11 @@ final class CheckupWindowController {
             pixelWidth($0.label) + spacePx * 2 + pixelWidth($0.version + $0.suffix)
         }.max() ?? 0
         let contentRightPx = prefixPx + contentW + dotCell * 3
-        // 右边框字形（│ ┐ ┘）起点：值列后留 1 格内衬——与左侧「│ 」的 1 格对称
+        // 行样式只用一个停靠位：值列右缘（真机已验证精确落位）。右边框字形
+        // （│ ┐ ┘）不用制表位——值后接一个 Menlo 空格（主字体步进精确无漂移）
+        // 直接拼上：位置 = contentRight + 1 格，与左侧「│ 」的 1 格对称。
+        // （2026-09-12 真机教训：行内第二个制表位会被 NSTextView 统一右偏
+        // ~1.5 格，双停靠位构造整体漂移；单右停靠位 + 精确空格彻底绕开）
         let borderStopPx = contentRightPx + spacePx
 
         // 真机渲染步进保守值：size() 对回退字形低估，宁可填充短一点也绝不过停靠点
@@ -865,8 +869,7 @@ final class CheckupWindowController {
             style.tabStops = stops
             return style
         }
-        let rowStyle = makeStyle(rightAt: [contentRightPx], leftAt: [borderStopPx])
-        let frameStyle = makeStyle(rightAt: [], leftAt: [borderStopPx])
+        let rowStyle = makeStyle(rightAt: [contentRightPx], leftAt: [])
         func boxLine(_ text: String, color: NSColor, style: NSParagraphStyle) -> NSAttributedString {
             NSAttributedString(string: text, attributes: [
                 .font: boxFont, .foregroundColor: color, .paragraphStyle: style,
@@ -884,17 +887,17 @@ final class CheckupWindowController {
         var screenLines: [NSAttributedString] = []
         var lineKinds: [BoxRowKind?] = []
 
-        // 表头与内容行同构：项目 = 左列头，「本地版本号」= 右列头右缘钉值列——
-        // 点线导引 + 双制表位，两侧留白与内容行完全一致（原横线填充版
-        // 「本地版本号」左右空隙不等大，2026-09-12 用户定稿改同构画法）
+        // 表头与内容行同构（2026-09-12 二次定稿：顶部实线）：项目 = 左列头，
+        // 横线填充；「本地版本号」右缘钉值列（右制表位）；┐ 钉边框列——
+        // 两个制表位都被真实文本消费，与内容行同一套经验证的构造
         let headerLeftPx = px("┌─ 项目 ")
-        let headerDots = max(2, Int(
-            ((contentRightPx - px(headerRightText) - spacePx - headerLeftPx) / safeDot).rounded(.down)))
-        let header = "┌─ 项目 " + String(repeating: "·", count: headerDots)
-            + "\t" + headerRightText + "\t┐"
+        let headerDashes = max(2, Int(
+            ((contentRightPx - px(headerRightText) - spacePx - headerLeftPx) / safeDash).rounded(.down)))
+        let header = "┌─ 项目 " + String(repeating: "─", count: headerDashes)
+            + "\t" + headerRightText + " ┐"
         screenLines.append(boxLine(header, color: boxFrameColor, style: rowStyle))
         plainLines.append(padToPx(padToPx(
-            "┌─ 项目 " + String(repeating: "·", count: headerDots) + " ",
+            "┌─ 项目 " + String(repeating: "─", count: headerDashes) + " ",
             contentRightPx - px(headerRightText)) + headerRightText, borderStopPx) + "┐")
         lineKinds.append(nil)
 
@@ -907,7 +910,7 @@ final class CheckupWindowController {
             let dots = max(2, Int(
                 ((contentRightPx - valuePx - spacePx - labelEndPx) / safeDot).rounded(.down)))
             let line = prefix + row.label + " " + String(repeating: "·", count: dots)
-                + "\t" + value + "\t│"
+                + "\t" + value + " │"
             screenLines.append(boxLine(line, color: row.color, style: rowStyle))
             plainLines.append(padToPx(padToPx(
                 prefix + row.label + " " + String(repeating: "·", count: dots) + " ",
@@ -915,11 +918,16 @@ final class CheckupWindowController {
             lineKinds.append(row.kind)
         }
 
-        // 底框：└ + 横线填充 + 左制表位接 ┘（字形起点同列）
+        // 底框（2026-09-12 二次定稿）：与内容行完全同构——└ + 横线（label 侧）
+        // + 右制表位锚一枚横线到值列右缘（充当「值」消费第一个停靠位）+ 左制表位
+        // 接 ┘。单停靠位样式在真机 NSTextView 上实测会跳位（┘ 落后停靠位 +2 格，
+        // 右下角不闭合）；行样式的两个停靠位都被真实文本消费，经验证不跳位。
+        // 末段横线与 ┘ 之间的 1 格间隙 = 内容行「值→│」的内衬列，网格一致
         let bottomDashes = max(1, Int(
-            ((borderStopPx - px("└") - dashCell) / safeDash).rounded(.down)))
-        let bottom = "└" + String(repeating: "─", count: bottomDashes) + "\t┘"
-        screenLines.append(boxLine(bottom, color: boxFrameColor, style: frameStyle))
+            ((contentRightPx - px("└") - dashCell * 2) / safeDash).rounded(.down)))
+        let bottom = "└" + String(repeating: "─", count: bottomDashes)
+            + "\t" + "─" + " ┘"
+        screenLines.append(boxLine(bottom, color: boxFrameColor, style: rowStyle))
         plainLines.append(padToPx(
             "└" + String(repeating: "─", count: bottomDashes), borderStopPx) + "┘")
         lineKinds.append(nil)
