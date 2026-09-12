@@ -231,11 +231,7 @@ final class CheckupWindowController {
             if let box {
                 self.appendVersionBox(box)
                 self.outdatedPluginNames = box.outdatedNames
-                // 【边框校准】真机 textView 右制表位落位带 ±1/3 格残差（随填充
-                // 尾端浮动，应用内自诊断实测 351.8-357.2 散布；离线同引擎复刻
-                // 不出）——读实际落位，按行右移停靠位补偿到全体最大列（只右移，
-                // 永不缩小整段的富余），两拍收敛
-                self.calibrateBoxBorders()
+
             }
             var advices: [String] = []
             for await result in Self.checkAll() {
@@ -267,6 +263,11 @@ final class CheckupWindowController {
             }
             self.append(line: self.attributed("── 完 ──", color: self.titleColor))
             self.refreshActionButtons(advices: advices)
+            // 【边框校准】真机 textView 右制表位落位带 ±1/3 格量化残差（随填充
+            // 尾端浮动；离线同引擎复刻不出）。放在全文落定之后——后续无追加、
+            // 无重排，校准结果稳定。读实际 │┐┘ 落位，按行右移停靠位对齐到最大列
+            // （只右移永保整段富余），循环至收敛（上限 3 拍）
+            self.calibrateBoxBorders()
         }
     }
 
@@ -992,10 +993,14 @@ final class CheckupWindowController {
     /// 边框自校准：对本窗已排版的方框行，读 │/┐/┘ 实际 x，全体对齐到最大列
     private func calibrateBoxBorders() {
         guard let textView, let lm = textView.layoutManager, let container = textView.textContainer else { return }
+        let storage = textView.textStorage
         let str = textView.string as NSString
-        for _ in 0..<1 {
+        // kern 补偿：停靠位位移在在窗布局上实测无效（落位对 stop 不敏感），
+        // kern 直接改字形步进、强制真实重排——对边框字形前的空格加 kern，
+        // 把 │┐┘ 精确推到全体最大列
+        for pass in 0..<3 {
             lm.ensureLayout(for: container)
-            struct RowInfo { let range: NSRange; let barX: CGFloat; let stop: CGFloat }
+            struct RowInfo { let kernAt: Int; let barX: CGFloat; let kern: CGFloat }
             var rowsInfo: [RowInfo] = []
             var charIdx = 0
             for line in str.components(separatedBy: "\n") {
@@ -1003,32 +1008,30 @@ final class CheckupWindowController {
                 defer { charIdx += len + 1 }
                 guard len > 0, line.contains("\t") else { continue }
                 let lineRange = NSRange(location: charIdx, length: len)
-                guard let ps = textView.textStorage?.attribute(.paragraphStyle, at: charIdx,
-                                                                effectiveRange: nil) as? NSParagraphStyle,
-                      let tab = ps.tabStops.first else { continue }
                 let gr = lm.glyphRange(forCharacterRange: lineRange, actualCharacterRange: nil)
                 guard gr.length > 0 else { continue }
+                var barChar = -1
                 var barX: CGFloat = -1
                 for g in stride(from: gr.length - 1, through: 0, by: -1) {
                     let c = lm.characterIndexForGlyph(at: gr.location + g)
                     let ch = str.substring(with: NSRange(location: c, length: 1))
                     if ch == "│" || ch == "┐" || ch == "┘" {
+                        barChar = c
                         barX = lm.boundingRect(forGlyphRange: NSRange(location: gr.location + g, length: 1),
                                                in: container).minX
                         break
                     }
                 }
-                guard barX >= 0 else { continue }
-                rowsInfo.append(RowInfo(range: lineRange, barX: barX, stop: tab.location))
+                guard barChar > 0 else { continue }   // 前一个字符即 kern 承接位（构造保证是空格）
+                let kern = (storage?.attribute(.kern, at: barChar - 1, effectiveRange: nil) as? CGFloat) ?? 0
+                rowsInfo.append(RowInfo(kernAt: barChar - 1, barX: barX, kern: kern))
             }
             guard rowsInfo.count > 1 else { return }
             let target = rowsInfo.map { $0.barX }.max()!
             var moved = false
             for row in rowsInfo where row.barX < target - 0.3 {
                 let delta = target - row.barX
-                let ps = NSMutableParagraphStyle()
-                ps.tabStops = [NSTextTab(textAlignment: .right, location: row.stop + delta, options: [:])]
-                textView.textStorage?.addAttribute(.paragraphStyle, value: ps, range: row.range)
+                storage?.addAttribute(.kern, value: row.kern + delta, range: NSRange(location: row.kernAt, length: 1))
                 moved = true
             }
             if !moved { break }
