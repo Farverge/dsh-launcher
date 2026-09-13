@@ -916,10 +916,13 @@ final class CheckupWindowController {
 
         // 表头与内容行同构（2026-09-12 二次定稿：顶部实线）：项目 = 左列头，
         // 横线填充；「本地版本号」右缘钉值列（右制表位）；┐ 钉边框列——
-        // 两个制表位都被真实文本消费，与内容行同一套经验证的构造
+        // 两个制表位都被真实文本消费，与内容行同一套经验证的构造。
+        // 横线链用 dashCell 精确除数（非保守 safeDash）：NSLayoutManager 对 ─
+        // 的实际步进与 pixelWidth 实测精确一致，safeDash 每枚高估 0.7pt 在
+        // 40+ 枚链上累计虚缩 4+ 格，横线尾与右锚段间裂出大缝
         let headerLeftPx = px("┌─ 项目 ")
         let headerDashes = max(2, Int(
-            ((contentRightPx - px(headerRightText) - spacePx - headerLeftPx) / safeDash).rounded(.down)))
+            ((contentRightPx - px(headerRightText) - spacePx - headerLeftPx) / dashCell).rounded(.down)))
         let header = "┌─ 项目 " + String(repeating: "─", count: headerDashes)
             + "\t" + headerRightText + " ┐"
         screenLines.append(boxLine(header, color: boxFrameColor, style: rowStyle))
@@ -945,14 +948,18 @@ final class CheckupWindowController {
             lineKinds.append(row.kind)
         }
 
-        // 底框：与行同机制——└ + 保守横线链 + 右锚段（K 枚横线与 ┘ 连体，
-        // 段右缘 = contentRight = 行段同列）。链保守留隙由段内横线吃掉整格，
-        // 底角闭合；全部沿用 px()/safeDash 保守口径，不触碰行列填充
+        // 底框：与行同机制——└ + 横线链 + 右锚段（K 枚横线与 ┘ 连体，
+        // 段右缘 = contentRight = 行段同列）。与内容行点线不同：横线不参与
+        // 内容行制表位竞争，实际步进与 pixelWidth 实测精确一致，链计数用
+        // dashCell 精确除数；右段 ceil 补满（缝 ≈ floor 余量 <1 格，字形
+        // 间隙级），ceil 过冲由左链 floor 预算吸收，右锚永成立（余量 ≥18pt
+        // > 段宽 15.7pt，362/427/300/200 四种框宽离线验证）。此前 safeDash
+        // 保守口径在 38 枚链上累计虚缩 5.3 格 = 用户看到的底框大缝
         let bottomDashes = max(1, Int(
-            ((contentRightPx - px("└") - dashCell * 3) / safeDash).rounded(.down)))
-        let bottomChainPx = px("└") + CGFloat(bottomDashes) * safeDash
+            ((contentRightPx - px("└") - px("┘") - spacePx) / dashCell).rounded(.down)))
+        let bottomChainPx = px("└") + CGFloat(bottomDashes) * dashCell
         let bottomValueDashes = max(1, Int(
-            ((contentRightPx - bottomChainPx - spacePx - px("┘")) / safeDash).rounded(.down)))
+            ((contentRightPx - bottomChainPx - spacePx - px("┘")) / dashCell).rounded(.up)))
         let bottom = "└" + String(repeating: "─", count: bottomDashes)
             + "\t" + String(repeating: "─", count: bottomValueDashes) + "┘"
         screenLines.append(boxLine(bottom, color: boxFrameColor, style: rowStyle))
