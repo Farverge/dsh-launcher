@@ -266,6 +266,8 @@ final class CheckupWindowController {
         }
     }
 
+
+
     /// 逐项检测流：每项真实执行完才 yield 一条，窗口即刻滚出该行。
     /// 顺序：端口身份 → 后端通道 → 桥接接口 → norm 协议 → mini-dialog → profile 装配
     /// → npx 副本 → 缓存体量。后端未监听时跳过所有需要后端的项（避免重复报错刷屏），
@@ -876,7 +878,12 @@ final class CheckupWindowController {
         let contentW = rows.map {
             pixelWidth($0.label) + spacePx * 2 + pixelWidth($0.version + $0.suffix)
         }.max() ?? 0
-        let contentRightPx = prefixPx + contentW + dotCell * 3 + spacePx * 2
+        // 框宽对齐到横线格点（向上取整格）：底框得以用最朴素的无制表位直排
+        // （└+链+┘，总宽=整数格），链尾与 ┘ 间零缝零 kern；内容行/表头
+        // 制表位同锚这个格点 stop，│ 与 ┘ 的右缘恒等（都 = padding+n·格）。
+        // ─ 的 ink 占格 103%（CoreText 实测），枚间天然微叠，全链无缝
+        let rawRightPx = prefixPx + contentW + dotCell * 3 + spacePx * 2
+        let contentRightPx = (rawRightPx / dashCell).rounded(.up) * dashCell
         // 行样式只用一个停靠位：值列右缘（真机已验证精确落位）。右边框字形
         // （│ ┐ ┘）不用制表位——值后接一个 Menlo 空格（主字体步进精确无漂移）
         // 直接拼上：位置 = contentRight + 1 格，与左侧「│ 」的 1 格对称。
@@ -917,12 +924,13 @@ final class CheckupWindowController {
         // 表头与内容行同构（2026-09-12 二次定稿：顶部实线）：项目 = 左列头，
         // 横线填充；「本地版本号」右缘钉值列（右制表位）；┐ 钉边框列——
         // 两个制表位都被真实文本消费，与内容行同一套经验证的构造。
-        // 横线链用 dashCell 精确除数（非保守 safeDash）：NSLayoutManager 对 ─
-        // 的实际步进与 pixelWidth 实测精确一致，safeDash 每枚高估 0.7pt 在
-        // 40+ 枚链上累计虚缩 4+ 格，横线尾与右锚段间裂出大缝
+        // 横线链必须保守 safeDash：真机在窗对 ─（回退字体）的实际步进比
+        // pixelWidth 测量大 ~0.3pt/枚，43 枚链累计 +12pt 会吃穿右锚段预算
+        // →「本地版本号 ┐」右锚失败回退左对齐 → ┐ 左偏 1.5 格（2026-09-13
+        // 用户截图像素实测，dashCell 精确除数版回归，当日回退）
         let headerLeftPx = px("┌─ 项目 ")
         let headerDashes = max(2, Int(
-            ((contentRightPx - px(headerRightText) - spacePx - headerLeftPx) / dashCell).rounded(.down)))
+            ((contentRightPx - px(headerRightText) - spacePx - headerLeftPx) / safeDash).rounded(.down)))
         let header = "┌─ 项目 " + String(repeating: "─", count: headerDashes)
             + "\t" + headerRightText + " ┐"
         screenLines.append(boxLine(header, color: boxFrameColor, style: rowStyle))
@@ -937,8 +945,13 @@ final class CheckupWindowController {
             let valuePx = px(value)
             let labelEndPx = prefixPx + px(row.label) + spacePx
             // 点线终处须严格早于「值起点 - 1 格」，防右制表位过冲
+            // 计数再减 1 枚：值含全角字符（「（可更新）」4 CJK+括号 size()
+            // 低估 ~5pt）会使预算虚大、dots 多算，tab 前尾端越过段左缘时
+            // 引擎把段贴尾渲染 → 该行 │ 右偏 2.5pt（2026-09-13 grok 行
+            // 在窗实测 375.37 vs 主列 372.85）。统一少一枚，点线视觉无感，
+            // 尾端恒远离临界
             let dots = max(2, Int(
-                ((contentRightPx - valuePx - spacePx - labelEndPx) / safeDot).rounded(.down)))
+                ((contentRightPx - valuePx - spacePx - labelEndPx) / safeDot).rounded(.down)) - 1)
             let line = prefix + row.label + " " + String(repeating: "·", count: dots)
                 + "\t" + value + " │"
             screenLines.append(boxLine(line, color: row.color, style: rowStyle))
@@ -949,22 +962,20 @@ final class CheckupWindowController {
         }
 
         // 底框：与行同机制——└ + 横线链 + 右锚段（K 枚横线与 ┘ 连体，
-        // 段右缘 = contentRight = 行段同列）。与内容行点线不同：横线不参与
-        // 内容行制表位竞争，实际步进与 pixelWidth 实测精确一致，链计数用
-        // dashCell 精确除数；右段 ceil 补满（缝 ≈ floor 余量 <1 格，字形
-        // 间隙级），ceil 过冲由左链 floor 预算吸收，右锚永成立（余量 ≥18pt
-        // > 段宽 15.7pt，362/427/300/200 四种框宽离线验证）。此前 safeDash
-        // 保守口径在 38 枚链上累计虚缩 5.3 格 = 用户看到的底框大缝
-        let bottomDashes = max(1, Int(
-            ((contentRightPx - px("└") - px("┘") - spacePx) / dashCell).rounded(.down)))
-        let bottomChainPx = px("└") + CGFloat(bottomDashes) * dashCell
-        let bottomValueDashes = max(1, Int(
-            ((contentRightPx - bottomChainPx - spacePx - px("┘")) / dashCell).rounded(.up)))
-        let bottom = "└" + String(repeating: "─", count: bottomDashes)
-            + "\t" + String(repeating: "─", count: bottomValueDashes) + "┘"
+        // 段右缘 = contentRight = 行段同列）。计数用 dashCell 精确除数
+        // （在窗 layoutManager 实测横线步进 7.826 ≈ pixelWidth 值，ε≈0，
+        // 与离线完全一致；safeDash 保守口径 38 枚累计虚缩 5.3 格=旧大缝）。
+        // 底框：无制表位直排——└ + 横线链 + ┘ 连续字符流，总宽 = 整数格
+        // （contentRightPx 已格点对齐），┘ 右缘与内容行 │ 恒等。此前七版
+        // （tab 右锚/保守链/ceil/kern×3）的缝全部源于「制表位落位与字符
+        // 格点的不可通约」：tab 段位置由 (stop,段宽) 反推、前文 kern 无效
+        // （在窗 TextKit 特性，离线复刻不出）；格点化后无 tab 无 kern，
+        // ─ ink 占格 103% 枚间微叠，全链到 ┘ 无缝（2026-09-13 定稿）
+        let cellsF: CGFloat = contentRightPx / dashCell
+        let totalCells = max(3, Int(cellsF.rounded(.toNearestOrAwayFromZero)))
+        let bottom = "└" + String(repeating: "─", count: totalCells - 2) + "┘"
         screenLines.append(boxLine(bottom, color: boxFrameColor, style: rowStyle))
-        plainLines.append(padToPx(
-            "└" + String(repeating: "─", count: bottomDashes), borderStopPx) + "┘")
+        plainLines.append(bottom)
         lineKinds.append(nil)
 
         return VersionBox(plainLines: plainLines, screenLines: screenLines,
