@@ -1065,8 +1065,14 @@ final class CheckupWindowController {
             if x == nil { return .orderedAscending }
             if y == nil { return .orderedDescending }
             guard let xv = x, let yv = y else { continue }
-            if let xi = Int(xv), let yi = Int(yv), xi != yi {
-                return xi < yi ? .orderedAscending : .orderedDescending
+            if let xi = Int(xv), let yi = Int(yv) {
+                if xi != yi {
+                    return xi < yi ? .orderedAscending : .orderedDescending
+                }
+                continue   // 数字段相等 → 继续比下一段（此前漏 continue 会落到
+                           // 「数字段 < 字符串段」规则，同号 tag 误判 local 旧
+                           // → 误报（可更新）；2026-09-13 grok 负责人 semver
+                           // 确认请求的验证中发现）
             }
             if Int(xv) != nil { return .orderedAscending }
             if Int(yv) != nil { return .orderedDescending }
